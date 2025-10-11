@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "224160397591",
+    "project_id": "flutter-backend-c5341",
+    "storage_bucket": "flutter-backend-c5341.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:224160397591:android:6efd762d29a54dc02b5f52",
+        "android_client_info": {
+          "package_name": "com.yassine.mylogin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD19sTqx-muJaIAm9429UwO5JcescIZEsM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
