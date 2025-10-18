@@ -1,27 +1,56 @@
 import 'package:flutter/material.dart';
 import 'package:animate_do/animate_do.dart';
-import 'auth_service.dart';
-import 'sign_up_page.dart';
+import '../services/auth_service.dart';
 
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+class SignUpPage extends StatefulWidget {
+  const SignUpPage({Key? key}) : super(key: key);
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  State<SignUpPage> createState() => _SignUpPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
-  final _emailCtrl = TextEditingController();
-  final _passCtrl  = TextEditingController();
-  final _auth      = AuthService();
-  bool _loading    = false;
+class _SignUpPageState extends State<SignUpPage> {
+  final _formKey     = GlobalKey<FormState>();
+  final _firstCtrl   = TextEditingController();
+  final _lastCtrl    = TextEditingController();
+  final _phoneCtrl   = TextEditingController();
+  final _emailCtrl   = TextEditingController();
+  final _passCtrl    = TextEditingController();
+  final _confirmCtrl = TextEditingController();
+  final _auth        = AuthService();
+  bool _loading      = false;
 
-  Future<void> _login() async {
+  /* ---------- validators ---------- */
+  String? _notEmpty(String? v) =>
+      (v == null || v.trim().isEmpty) ? 'Required' : null;
+
+  String? _phone(String? v) {
+    final trimmed = (v ?? '').trim();
+    if (trimmed.length < 7) return 'Enter a valid phone';
+    if (!RegExp(r'^[0-9]{7,15}$').hasMatch(trimmed)) return 'Digits only';
+    return null;
+  }
+
+  String? _email(String? v) {
+    final reg = RegExp(
+        r"^[a-zA-Z0-9.a-zA-Z0-9.!#$%&'*+-/=?^_`{|}~]+@[a-zA-Z0-9]+\.[a-zA-Z]+");
+    return (v == null || !reg.hasMatch(v.trim())) ? 'Enter a valid e-mail' : null;
+  }
+
+  String? _pass(String? v) =>
+      (v == null || v.trim().length < 6) ? 'Min 6 characters' : null;
+
+  String? _confirm(String? v) =>
+      (v ?? '').trim() != (_passCtrl.text).trim() ? 'Passwords do not match' : null;
+
+  /* ---------- submit ---------- */
+  Future<void> _submit() async {
+    final state = _formKey.currentState;
+    if (state == null || !state.validate()) return;
+    state.save();
     setState(() => _loading = true);
     try {
-      await _auth.signIn(
-        _emailCtrl.text.trim(),
-        _passCtrl.text.trim(),
-      );
+      await _auth.signUp(_emailCtrl.text.trim(), _passCtrl.text.trim());
+      if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -33,8 +62,12 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
+    _firstCtrl.dispose();
+    _lastCtrl.dispose();
+    _phoneCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
+    _confirmCtrl.dispose();
     super.dispose();
   }
 
@@ -52,6 +85,10 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
   }
+
+  /* ============================================================
+   *  HEADER
+   * ============================================================ */
   Widget _headerStack() => SizedBox(
         height: 400,
         child: Stack(
@@ -68,7 +105,7 @@ class _LoginPageState extends State<LoginPage> {
             _posImg('assets/images/light-2.png', 140, 1200, 150, 1200),
             _posImg('assets/images/clock.png', null, 1300, 150, 1300,
                 right: 40, top: 40),
-            _loginText(1600),
+            _titleText(1600),
           ],
         ),
       );
@@ -91,14 +128,14 @@ class _LoginPageState extends State<LoginPage> {
         ),
       );
 
-  Widget _loginText(int delay) => Positioned(
+  Widget _titleText(int delay) => Positioned(
         child: FadeInUp(
           duration: Duration(milliseconds: delay),
           child: Container(
             margin: const EdgeInsets.only(top: 50),
             child: const Center(
               child: Text(
-                'Login',
+                'Sign Up',
                 style: TextStyle(
                     color: Colors.white,
                     fontSize: 40,
@@ -109,39 +146,31 @@ class _LoginPageState extends State<LoginPage> {
         ),
       );
 
-  /* ---------- form ---------- */
+  /* ============================================================
+   *  FORM CARD
+   * ============================================================ */
   Widget _formCard() => Padding(
         padding: const EdgeInsets.all(30),
         child: Column(
           children: [
             FadeInUp(
               duration: const Duration(milliseconds: 1800),
-              child: _inputCard(),
+              child: Form(key: _formKey, child: _inputCard()),
             ),
             const SizedBox(height: 30),
             FadeInUp(
               duration: const Duration(milliseconds: 1900),
               child: _loading
                   ? const CircularProgressIndicator()
-                  : _gradientBtn('Login', _login),
-            ),
-            const SizedBox(height: 30),
-            FadeInUp(
-              duration: const Duration(milliseconds: 1950),
-              child: _borderBtn('Sign Up', () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const SignUpPage()))),
+                  : _gradientBtn('Create account', _submit),
             ),
             const SizedBox(height: 20),
             FadeInUp(
               duration: const Duration(milliseconds: 2000),
               child: GestureDetector(
-                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Forgot password tapped')),
-                ),
+                onTap: () => Navigator.pop(context),
                 child: const Text(
-                  'Forgot Password?',
+                  'Already have an account? Log in',
                   style: TextStyle(color: Color(0xFF1e405b)),
                 ),
               ),
@@ -166,34 +195,49 @@ class _LoginPageState extends State<LoginPage> {
         ),
         child: Column(
           children: [
-            _field(true, 'Email or Phone number', _emailCtrl),
+            _field(true, 'First name', _firstCtrl),
+            _field(true, 'Last name', _lastCtrl),
+            _field(true, 'Phone', _phoneCtrl, type: TextInputType.phone),
+            _field(true, 'E-mail', _emailCtrl, type: TextInputType.emailAddress),
             _field(false, 'Password', _passCtrl, obscure: true),
+            _field(false, 'Confirm password', _confirmCtrl, obscure: true),
           ],
         ),
       );
 
   Widget _field(bool showBorder, String hint, TextEditingController ctrl,
-          {bool obscure = false}) =>
-      Container(
-        padding: const EdgeInsets.all(8),
-        decoration: showBorder
-            ? BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(
-                      color: const Color.fromRGBO(143, 148, 251, 1)),
-                ),
-              )
-            : null,
-        child: TextField(
-          controller: ctrl,
-          obscureText: obscure,
-          decoration: InputDecoration(
-            border: InputBorder.none,
-            hintText: hint,
-            hintStyle: TextStyle(color: Color(0xFF1e405b)),
-          ),
+      {TextInputType? type, bool obscure = false}) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: showBorder
+          ? BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                    color: const Color.fromRGBO(143, 148, 251, 1)),
+              ),
+            )
+          : null,
+      child: TextFormField(
+        controller: ctrl,
+        keyboardType: type,
+        obscureText: obscure,
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          hintText: hint,
+          hintStyle: const TextStyle(color: Color(0xFF1e405b)),
+          errorStyle: const TextStyle(color: Colors.red, fontSize: 12),
         ),
-      );
+        validator: (val) {
+          if (hint == 'First name' || hint == 'Last name') return _notEmpty(val);
+          if (hint == 'Phone') return _phone(val);
+          if (hint == 'E-mail') return _email(val);
+          if (hint == 'Password') return _pass(val);
+          if (hint == 'Confirm password') return _confirm(val);
+          return null;
+        },
+      ),
+    );
+  }
 
   Widget _gradientBtn(String text, VoidCallback onTap) => Material(
         color: Colors.transparent,
@@ -213,27 +257,6 @@ class _LoginPageState extends State<LoginPage> {
               text,
               style: const TextStyle(
                   color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-      );
-
-  Widget _borderBtn(String text, VoidCallback onTap) => Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: onTap,
-          child: Container(
-            height: 50,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFF1e405b), width: 2),
-            ),
-            child: Text(
-              text,
-              style: const TextStyle(
-                  color: Color(0xFF1e405b), fontWeight: FontWeight.bold),
             ),
           ),
         ),
