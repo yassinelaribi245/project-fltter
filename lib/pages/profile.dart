@@ -1,8 +1,52 @@
 import 'package:flutter/material.dart';
+import 'package:animate_do/animate_do.dart';
 import '../services/auth_service.dart';
+import '../services/messaging_service.dart';
 
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
+
+  @override
+  _ProfilePageState createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  final MessagingService _messagingService = MessagingService();
+  final AuthService _authService = AuthService();
+  String? userName;
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserData();
+  }
+
+  Future<void> _fetchUserData() async {
+    try {
+      final userId = _authService.currentUser?.uid;
+      if (userId != null) {
+        final data = await _messagingService.getUserData(userId);
+        setState(() {
+          userName = data?['name'] ?? 'Unknown User';
+          isLoading = false;
+        });
+      } else {
+        setState(() {
+          userName = 'Unknown User';
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        userName = 'Unknown User';
+        isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading user data: $e')),
+      );
+    }
+  }
 
   void _onSettingsPressed() {
     // TODO: Add settings logic here
@@ -13,75 +57,80 @@ class ProfilePage extends StatelessWidget {
   }
 
   void _onLogoutPressed(BuildContext context) {
-    AuthService().signOut();
+    _authService.signOut();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF1E405B),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: [
-              const CircleAvatar(
-                radius: 70,
-                backgroundImage: AssetImage('assets/profile.jpg'),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Hi, I’m Hermes! A messenger who delivers messages across the worlds.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 30),
-              ElevatedButton(
-                onPressed: _onSettingsPressed,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFBF1D1),
-                  foregroundColor: const Color(0xFF000000),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
+                child: FadeInUp(
+                  duration: const Duration(milliseconds: 1000),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      const CircleAvatar(
+                        radius: 70,
+                        backgroundImage: AssetImage('assets/profile.jpg'),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        userName ?? 'Hi, I\'m Hermes! A messenger who delivers messages across the worlds.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 30),
+                      ElevatedButton(
+                        onPressed: _onSettingsPressed,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFBF1D1),
+                          foregroundColor: const Color(0xFF000000),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          minimumSize: const Size(double.infinity, 50),
+                        ),
+                        child: const Text('Settings'),
+                      ),
+                      const SizedBox(height: 15),
+                      ElevatedButton(
+                        onPressed: _onFriendsPressed,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFBF1D1),
+                          foregroundColor: const Color(0xFF000000),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          minimumSize: const Size(double.infinity, 50),
+                        ),
+                        child: const Text('Friends'),
+                      ),
+                      const SizedBox(height: 15),
+                      ElevatedButton(
+                        onPressed: () => _onLogoutPressed(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFBF1D1),
+                          foregroundColor: Colors.redAccent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          minimumSize: const Size(double.infinity, 50),
+                        ),
+                        child: const Text('Logout'),
+                      ),
+                    ],
                   ),
-                  minimumSize: const Size(double.infinity, 50),
                 ),
-                child: const Text('Settings'),
               ),
-              const SizedBox(height: 15),
-              ElevatedButton(
-                onPressed: _onFriendsPressed,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFBF1D1),
-                  foregroundColor: const Color(0xFF000000),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  minimumSize: const Size(double.infinity, 50),
-                ),
-                child: const Text('Friends'),
-              ),
-              const SizedBox(height: 15),
-              ElevatedButton(
-                onPressed: () => _onLogoutPressed(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFBF1D1),
-                  foregroundColor: Colors.redAccent,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  minimumSize: const Size(double.infinity, 50),
-                ),
-                child: const Text('Logout'),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 }

@@ -1,25 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:animate_do/animate_do.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_service.dart';
 
 class SignUpPage extends StatefulWidget {
-  const SignUpPage({Key? key}) : super(key: key);
+  const SignUpPage({super.key});
+
   @override
   State<SignUpPage> createState() => _SignUpPageState();
 }
 
 class _SignUpPageState extends State<SignUpPage> {
-  final _formKey     = GlobalKey<FormState>();
-  final _firstCtrl   = TextEditingController();
-  final _lastCtrl    = TextEditingController();
-  final _phoneCtrl   = TextEditingController();
-  final _emailCtrl   = TextEditingController();
-  final _passCtrl    = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  final _firstCtrl = TextEditingController();
+  final _lastCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
-  final _auth        = AuthService();
-  bool _loading      = false;
+  final _auth = AuthService();
+  bool _loading = false;
 
-  /* ---------- validators ---------- */
   String? _notEmpty(String? v) =>
       (v == null || v.trim().isEmpty) ? 'Required' : null;
 
@@ -42,23 +43,68 @@ class _SignUpPageState extends State<SignUpPage> {
   String? _confirm(String? v) =>
       (v ?? '').trim() != (_passCtrl.text).trim() ? 'Passwords do not match' : null;
 
-  /* ---------- submit ---------- */
-  Future<void> _submit() async {
-    final state = _formKey.currentState;
-    if (state == null || !state.validate()) return;
-    state.save();
-    setState(() => _loading = true);
-    try {
-      await _auth.signUp(_emailCtrl.text.trim(), _passCtrl.text.trim());
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
-      }
+Future<void> _submit() async {
+  final state = _formKey.currentState;
+  if (state == null || !state.validate()) return;
+  state.save();
+
+  setState(() => _loading = true);
+
+  try {
+    // 1. create Firebase-Auth account
+    final cred = await _auth.signUp(
+      _emailCtrl.text.trim(),
+      _passCtrl.text.trim(),
+    );
+    final user = cred?.user;
+    if (user == null) throw Exception('Sign-up failed');
+
+    // 2. update display-name
+    final fullName = '${_firstCtrl.text.trim()} ${_lastCtrl.text.trim()}';
+    await user.updateDisplayName(fullName);
+
+    // 3. write public + private sub-docs in a batch
+    final uid = user.uid;
+    final batch = FirebaseFirestore.instance.batch();
+
+    final publicRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('public')
+        .doc('data');
+
+    batch.set(publicRef, {
+      'name': fullName,
+      'bio': '',
+      'profilePicture': null, // add later
+    });
+
+    final privateRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('private')
+        .doc('data');
+
+    batch.set(privateRef, {
+      'phone': _phoneCtrl.text.trim(),
+      'email': _emailCtrl.text.trim(),
+    });
+
+    await batch.commit();
+
+    // 4. go back to login
+    if (mounted) Navigator.pop(context);
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
     }
+  } finally {
     if (mounted) setState(() => _loading = false);
   }
+}
+
 
   @override
   void dispose() {
@@ -86,9 +132,6 @@ class _SignUpPageState extends State<SignUpPage> {
     );
   }
 
-  /* ============================================================
-   *  HEADER
-   * ============================================================ */
   Widget _headerStack() => SizedBox(
         height: 400,
         child: Stack(
@@ -103,8 +146,7 @@ class _SignUpPageState extends State<SignUpPage> {
             ),
             _posImg('assets/images/light-1.png', 30, 1000, 200, 1000),
             _posImg('assets/images/light-2.png', 140, 1200, 150, 1200),
-            _posImg('assets/images/clock.png', null, 1300, 150, 1300,
-                right: 40, top: 40),
+            _posImg('assets/images/clock.png', null, 1300, 150, 1300, right: 40, top: 40),
             _titleText(1600),
           ],
         ),
@@ -121,9 +163,7 @@ class _SignUpPageState extends State<SignUpPage> {
         child: FadeInUp(
           duration: Duration(milliseconds: delay),
           child: Container(
-            decoration: BoxDecoration(
-              image: DecorationImage(image: AssetImage(path)),
-            ),
+            decoration: BoxDecoration(image: DecorationImage(image: AssetImage(path))),
           ),
         ),
       );
@@ -137,18 +177,13 @@ class _SignUpPageState extends State<SignUpPage> {
               child: Text(
                 'Sign Up',
                 style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 40,
-                    fontWeight: FontWeight.bold),
+                    color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold),
               ),
             ),
           ),
         ),
       );
 
-  /* ============================================================
-   *  FORM CARD
-   * ============================================================ */
   Widget _formCard() => Padding(
         padding: const EdgeInsets.all(30),
         child: Column(
@@ -185,11 +220,11 @@ class _SignUpPageState extends State<SignUpPage> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: const Color.fromRGBO(143, 148, 251, 1)),
-          boxShadow: [
+          boxShadow: const [
             BoxShadow(
-              color: const Color.fromRGBO(143, 148, 251, .2),
+              color: Color.fromRGBO(143, 148, 251, .2),
               blurRadius: 20,
-              offset: const Offset(0, 10),
+              offset: Offset(0, 10),
             ),
           ],
         ),
@@ -212,8 +247,7 @@ class _SignUpPageState extends State<SignUpPage> {
       decoration: showBorder
           ? BoxDecoration(
               border: Border(
-                bottom: BorderSide(
-                    color: const Color.fromRGBO(143, 148, 251, 1)),
+                bottom: BorderSide(color: const Color.fromRGBO(143, 148, 251, 1)),
               ),
             )
           : null,
@@ -255,8 +289,7 @@ class _SignUpPageState extends State<SignUpPage> {
             ),
             child: Text(
               text,
-              style: const TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.bold),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
         ),

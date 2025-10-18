@@ -2,31 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:animate_do/animate_do.dart';
 import '../services/auth_service.dart';
 import 'sign_up_page.dart';
-import 'profile.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
+
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
 
 class _LoginPageState extends State<LoginPage> {
   final _emailCtrl = TextEditingController();
-  final _passCtrl  = TextEditingController();
-  final _auth      = AuthService();
-  bool _loading    = false;
+  final _passCtrl = TextEditingController();
+  final _auth = AuthService();
+  bool _loading = false;
 
   Future<void> _login() async {
     setState(() => _loading = true);
     try {
-      await _auth.signIn(
-        _emailCtrl.text.trim(),
-        _passCtrl.text.trim(),
-      );
+      await _auth.signIn(_emailCtrl.text.trim(), _passCtrl.text.trim());
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
     if (mounted) setState(() => _loading = false);
@@ -53,6 +49,7 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
   }
+
   Widget _headerStack() => SizedBox(
         height: 400,
         child: Stack(
@@ -67,8 +64,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             _posImg('assets/images/light-1.png', 30, 1000, 200, 1000),
             _posImg('assets/images/light-2.png', 140, 1200, 150, 1200),
-            _posImg('assets/images/clock.png', null, 1300, 150, 1300,
-                right: 40, top: 40),
+            _posImg('assets/images/clock.png', null, 1300, 150, 1300, right: 40, top: 40),
             _loginText(1600),
           ],
         ),
@@ -85,9 +81,7 @@ class _LoginPageState extends State<LoginPage> {
         child: FadeInUp(
           duration: Duration(milliseconds: delay),
           child: Container(
-            decoration: BoxDecoration(
-              image: DecorationImage(image: AssetImage(path)),
-            ),
+            decoration: BoxDecoration(image: DecorationImage(image: AssetImage(path))),
           ),
         ),
       );
@@ -101,16 +95,13 @@ class _LoginPageState extends State<LoginPage> {
               child: Text(
                 'Login',
                 style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 40,
-                    fontWeight: FontWeight.bold),
+                    color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold),
               ),
             ),
           ),
         ),
       );
 
-  /* ---------- form ---------- */
   Widget _formCard() => Padding(
         padding: const EdgeInsets.all(30),
         child: Column(
@@ -130,9 +121,7 @@ class _LoginPageState extends State<LoginPage> {
             FadeInUp(
               duration: const Duration(milliseconds: 1950),
               child: _borderBtn('Sign Up', () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const SignUpPage()))),
+                  context, MaterialPageRoute(builder: (_) => const SignUpPage()))),
             ),
             const SizedBox(height: 20),
             FadeInUp(
@@ -157,11 +146,11 @@ class _LoginPageState extends State<LoginPage> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: const Color.fromRGBO(143, 148, 251, 1)),
-          boxShadow: [
+          boxShadow: const [
             BoxShadow(
-              color: const Color.fromRGBO(143, 148, 251, .2),
+              color: Color.fromRGBO(143, 148, 251, .2),
               blurRadius: 20,
-              offset: const Offset(0, 10),
+              offset: Offset(0, 10),
             ),
           ],
         ),
@@ -180,8 +169,7 @@ class _LoginPageState extends State<LoginPage> {
         decoration: showBorder
             ? BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(
-                      color: const Color.fromRGBO(143, 148, 251, 1)),
+                  bottom: BorderSide(color: const Color.fromRGBO(143, 148, 251, 1)),
                 ),
               )
             : null,
@@ -191,7 +179,7 @@ class _LoginPageState extends State<LoginPage> {
           decoration: InputDecoration(
             border: InputBorder.none,
             hintText: hint,
-            hintStyle: TextStyle(color: Color(0xFF1e405b)),
+            hintStyle: const TextStyle(color: Color(0xFF1e405b)),
           ),
         ),
       );
@@ -212,8 +200,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             child: Text(
               text,
-              style: const TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.bold),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
         ),
