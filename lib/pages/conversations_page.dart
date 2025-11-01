@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/messaging_service.dart';
 import 'chat_page.dart';
+import '../widgets/presence_dot.dart';
 
 class ConversationsPage extends StatelessWidget {
   const ConversationsPage({super.key});
@@ -14,7 +15,10 @@ class ConversationsPage extends StatelessWidget {
       backgroundColor: const Color(0xFF1E405B),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E405B),
-        title: const Text('Conversations', style: TextStyle(color: Colors.white)),
+        title: const Text(
+          'Conversations',
+          style: TextStyle(color: Colors.white),
+        ),
       ),
       body: StreamBuilder<List<Map<String, dynamic>>>(
         stream: messagingService.getConversations(),
@@ -23,7 +27,12 @@ class ConversationsPage extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.white)));
+            return Center(
+              child: Text(
+                'Error: ${snapshot.error}',
+                style: const TextStyle(color: Colors.white),
+              ),
+            );
           }
           final conversations = snapshot.data ?? [];
           if (conversations.isEmpty) {
@@ -38,18 +47,26 @@ class ConversationsPage extends StatelessWidget {
             itemCount: conversations.length,
             itemBuilder: (context, index) {
               final conversation = conversations[index];
-              final otherUserId = (conversation['participants'] as List<dynamic>)
-                  .firstWhere((id) => id != messagingService.currentUserId);
+              final otherUserId =
+                  (conversation['participants'] as List<dynamic>).firstWhere(
+                    (id) => id != messagingService.currentUserId,
+                  );
               return FutureBuilder<Map<String, dynamic>?>(
                 future: messagingService.getUserData(otherUserId),
                 builder: (context, userSnapshot) {
                   final userData = userSnapshot.data;
                   final otherUserName = userData?['name'] ?? 'Unknown User';
                   return ListTile(
-                    leading: CircleAvatar(
-                      backgroundImage: userData?['profilePicture'] != null
-                          ? NetworkImage(userData!['profilePicture'])
-                          : const AssetImage('assets/other_profile.jpg'),
+                    leading: Stack(
+                      alignment: Alignment.bottomRight,
+                      children: [
+                        CircleAvatar(
+                          backgroundImage: userData?['profilePicture'] != null
+                              ? NetworkImage(userData!['profilePicture'])
+                              : const AssetImage('assets/other_profile.jpg'),
+                        ),
+                        PresenceDot(otherUserId), // ← dot only
+                      ],
                     ),
                     title: Text(
                       otherUserName,

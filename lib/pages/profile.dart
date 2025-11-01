@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:animate_do/animate_do.dart';
-import '../services/auth_service.dart';
-import '../services/messaging_service.dart';
+import 'package:project_flutter/services/presence_fcm.dart';
+import 'package:project_flutter/services/auth_service.dart';
+import 'package:project_flutter/services/messaging_service.dart';
+import 'package:project_flutter/services/post_service.dart';
+import 'package:project_flutter/pages/admin_posts_page.dart';
+import 'package:rxdart/rxdart.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -56,8 +60,9 @@ class _ProfilePageState extends State<ProfilePage> {
     // TODO: Add friends logic here
   }
 
-  void _onLogoutPressed(BuildContext context) {
-    _authService.signOut();
+  void _onLogoutPressed(BuildContext context) async {
+    await PresenceFCM().deleteFcmToken();
+    await _authService.signOut();
   }
 
   @override
@@ -88,6 +93,44 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       ),
                       const SizedBox(height: 30),
+
+                      /* ---------- ADMIN BUTTON (visible only to admins) ---------- */
+                      StreamBuilder<bool>(
+                        stream: _authService.userStream
+                            .map((u) => u?.uid)
+                            .switchMap((uid) => uid == null
+                                ? Stream.value(false)
+                                : PostService().isCurrentUserAdmin()),
+                        builder: (_, snap) {
+                          if (snap.data == true) {
+                            return Column(
+                              children: [
+                                ElevatedButton(
+                                  onPressed: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const AdminPostsPage(),
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFFBF1D1),
+                                    foregroundColor: Colors.black,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    minimumSize: const Size(double.infinity, 50),
+                                  ),
+                                  child: const Text('Admin Posts'),
+                                ),
+                                const SizedBox(height: 15),
+                              ],
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      ),
+
+                      /* ---------- SETTINGS ---------- */
                       ElevatedButton(
                         onPressed: _onSettingsPressed,
                         style: ElevatedButton.styleFrom(
@@ -101,6 +144,8 @@ class _ProfilePageState extends State<ProfilePage> {
                         child: const Text('Settings'),
                       ),
                       const SizedBox(height: 15),
+
+                      /* ---------- FRIENDS ---------- */
                       ElevatedButton(
                         onPressed: _onFriendsPressed,
                         style: ElevatedButton.styleFrom(
@@ -114,6 +159,8 @@ class _ProfilePageState extends State<ProfilePage> {
                         child: const Text('Friends'),
                       ),
                       const SizedBox(height: 15),
+
+                      /* ---------- LOGOUT ---------- */
                       ElevatedButton(
                         onPressed: () => _onLogoutPressed(context),
                         style: ElevatedButton.styleFrom(

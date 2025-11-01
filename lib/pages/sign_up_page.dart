@@ -88,6 +88,7 @@ Future<void> _submit() async {
     batch.set(privateRef, {
       'phone': _phoneCtrl.text.trim(),
       'email': _emailCtrl.text.trim(),
+      'isAdmin': false,
     });
 
     await batch.commit();

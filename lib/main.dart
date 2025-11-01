@@ -1,6 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:project_flutter/pages/explore_page.dart';
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
 import 'services/messaging_service.dart';
@@ -8,10 +10,48 @@ import 'pages/login_page.dart';
 import 'pages/profile.dart';
 import 'pages/conversations_page.dart';
 import 'pages/other_profile.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'services/presence_fcm.dart';
+import 'pages/chat_page.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+Future<void> _handleMessageTap(RemoteMessage msg) async {
+  final cid = msg.data['conversationId'] as String?;
+  if (cid == null) return;
+
+  final parts = cid.split('_');
+  final myUid = FirebaseAuth.instance.currentUser?.uid;
+  if (myUid == null) return;
+  final otherUid = parts.firstWhere((u) => u != myUid, orElse: () => '');
+
+  final userDoc = await FirebaseFirestore.instance
+      .doc('users/$otherUid/public/data')
+      .get();
+  final name = userDoc.data()?['name'] ?? 'Unknown';
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final context = navigatorKey.currentContext;
+    if (context == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatPage(otherUserId: otherUid, otherUserName: name),
+      ),
+    );
+  });
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  FirebaseMessaging.onBackgroundMessage(PresenceFCM.bgHandler);
+  FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageTap);
+  final RemoteMessage? initial = await FirebaseMessaging.instance
+      .getInitialMessage();
+  if (initial != null) _handleMessageTap(initial);
+
   runApp(const MyApp());
 }
 
@@ -21,6 +61,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -30,7 +71,9 @@ class MyApp extends StatelessWidget {
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFFFBF1D1),
             foregroundColor: const Color(0xFF000000),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
           ),
         ),
       ),
@@ -57,7 +100,35 @@ class BottomNavExample extends StatefulWidget {
   _BottomNavExampleState createState() => _BottomNavExampleState();
 }
 
-class _BottomNavExampleState extends State<BottomNavExample> {
+class _BottomNavExampleState extends State<BottomNavExample>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _init();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    PresenceFCM().setPresence(false);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final p = PresenceFCM();
+    if (state == AppLifecycleState.resumed) p.setPresence(true);
+    if (state == AppLifecycleState.paused) p.setPresence(false);
+  }
+
+  void _init() async {
+    await PresenceFCM().saveFcmToken();
+    await PresenceFCM().ensurePresenceDoc();   // ← ADD THIS LINE
+    await PresenceFCM().setPresence(true);
+  }
+
   int _selectedIndex = 0;
 
   @override
@@ -90,7 +161,9 @@ class _BottomNavExampleState extends State<BottomNavExample> {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError || !snapshot.hasData || snapshot.data?['name'] == null) {
+        if (snapshot.hasError ||
+            !snapshot.hasData ||
+            snapshot.data?['name'] == null) {
           return const Center(
             child: Text(
               'Failed to load user data. Check Firestore permissions or data.',
@@ -103,21 +176,21 @@ class _BottomNavExampleState extends State<BottomNavExample> {
       },
     );
 
-    final List<Widget> _pages = [
+    final List<Widget> pages = [
+      const ExplorePage(),
       homePage,
-      const Center(child: Text('🔍 Search Page', style: TextStyle(fontSize: 25, color: Colors.white))),
       const ConversationsPage(),
       const ProfilePage(),
     ];
 
-    void _onDestinationSelected(int index) {
+    void onDestinationSelected(int index) {
       setState(() {
         _selectedIndex = index;
       });
     }
 
     return Scaffold(
-      body: _pages[_selectedIndex],
+      body: pages[_selectedIndex],
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
         child: Material(
@@ -130,11 +203,17 @@ class _BottomNavExampleState extends State<BottomNavExample> {
               backgroundColor: Colors.grey.shade400,
               indicatorColor: const Color(0xFFFBF1D1).withOpacity(0.3),
               selectedIndex: _selectedIndex,
-              onDestinationSelected: _onDestinationSelected,
+              onDestinationSelected: onDestinationSelected,
               destinations: const [
                 NavigationDestination(
-                  icon: Icon(Icons.assistant_navigation, color: Color(0xFFFBF1D1)),
-                  selectedIcon: Icon(Icons.assistant_navigation, color: Color(0xFFFBF1D1)),
+                  icon: Icon(
+                    Icons.assistant_navigation,
+                    color: Color(0xFFFBF1D1),
+                  ),
+                  selectedIcon: Icon(
+                    Icons.assistant_navigation,
+                    color: Color(0xFFFBF1D1),
+                  ),
                   label: 'Home',
                 ),
                 NavigationDestination(

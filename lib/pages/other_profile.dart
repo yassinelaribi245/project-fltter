@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:animate_do/animate_do.dart';
 import '../services/messaging_service.dart';
 import 'chat_page.dart';
+import '../widgets/presence_dot.dart';
 
 class OtherProfilePage extends StatefulWidget {
   final String userId;
@@ -47,9 +48,9 @@ class _OtherProfilePageState extends State<OtherProfilePage> {
   }
 
   void _onAddFriend() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Friend request sent!')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Friend request sent!')));
   }
 
   void _onSendMessage() {
@@ -96,11 +97,15 @@ class _OtherProfilePageState extends State<OtherProfilePage> {
                             ? NetworkImage(userData!['profilePicture'])
                             : const AssetImage('assets/other_profile.jpg'),
                       ),
+                      PresenceDot(widget.userId),
                       const SizedBox(height: 20),
                       Text(
                         widget.userName,
                         style: const TextStyle(
-                            fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                       const SizedBox(height: 10),
                       Text(
@@ -108,7 +113,10 @@ class _OtherProfilePageState extends State<OtherProfilePage> {
                             ? userData!['bio']
                             : 'No bio available',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 16, color: Colors.white70),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.white70,
+                        ),
                       ),
                       const SizedBox(height: 20),
                       Row(
@@ -164,11 +172,15 @@ class _OtherProfilePageState extends State<OtherProfilePage> {
                                 5,
                                 (index) => Card(
                                   color: const Color(0xFFEDEDEB),
-                                  margin: const EdgeInsets.symmetric(vertical: 8),
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                  ),
                                   child: ListTile(
                                     leading: const Icon(Icons.article),
                                     title: Text('Post #${index + 1}'),
-                                    subtitle: const Text('This is a placeholder for a made-up post.'),
+                                    subtitle: const Text(
+                                      'This is a placeholder for a made-up post.',
+                                    ),
                                   ),
                                 ),
                               ),
@@ -177,13 +189,18 @@ class _OtherProfilePageState extends State<OtherProfilePage> {
                               children: List.generate(
                                 6,
                                 (index) => Container(
-                                  margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                    horizontal: 4,
+                                  ),
                                   height: 150,
                                   decoration: BoxDecoration(
                                     color: Colors.grey.shade300,
                                     borderRadius: BorderRadius.circular(15),
                                     image: const DecorationImage(
-                                      image: AssetImage('assets/placeholder.jpg'),
+                                      image: AssetImage(
+                                        'assets/placeholder.jpg',
+                                      ),
                                       fit: BoxFit.cover,
                                     ),
                                   ),
