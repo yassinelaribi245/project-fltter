@@ -1,12 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../services/messaging_service.dart';
-import '../widgets/presence_dot.dart';
+import 'package:project_flutter/services/messaging_service.dart';
+import 'package:project_flutter/widgets/presence_dot.dart';
+import 'package:project_flutter/pages/gallery_page.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:file_picker/file_picker.dart';
 
 class ChatPage extends StatefulWidget {
   final String otherUserId;
   final String otherUserName;
-
   const ChatPage({
     super.key,
     required this.otherUserId,
@@ -14,13 +16,14 @@ class ChatPage extends StatefulWidget {
   });
 
   @override
-  _ChatPageState createState() => _ChatPageState();
+  State<ChatPage> createState() => _ChatPageState();
 }
 
 class _ChatPageState extends State<ChatPage> {
   final MessagingService _messagingService = MessagingService();
   final TextEditingController _messageController = TextEditingController();
   late String _conversationId;
+  bool _uploading = false;
 
   @override
   void initState() {
@@ -29,34 +32,62 @@ class _ChatPageState extends State<ChatPage> {
       _messagingService.currentUserId!,
       widget.otherUserId,
     );
-
-    // ensure the conversation doc exists before we listen to messages
-    _messagingService
-        .startConversation(widget.otherUserId)
-        .then((_) {
-          // now it is safe to build the screen
-          if (mounted) setState(() {});
-        })
-        .catchError((e) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not start conversation: $e')),
-          );
-        });
+    _messagingService.startConversation(widget.otherUserId);
   }
 
-  void _sendMessage() async {
-    if (_messageController.text.trim().isEmpty) return;
+  void _sendText() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+    _messageController.clear();
+    await _messagingService.sendMessage(_conversationId, text);
+  }
+
+  void _pickFile() async {
+    setState(() => _uploading = true);
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      allowMultiple: false,
+    );
+    if (result == null || result.files.single.path == null) {
+      setState(() => _uploading = false);
+      return;
+    }
+    final file = File(result.files.single.path!);
     try {
-      await _messagingService.startConversation(widget.otherUserId);
-      await _messagingService.sendMessage(
-        _conversationId,
-        _messageController.text,
-      );
-      _messageController.clear();
+      await _messagingService.sendFileMessage(_conversationId, file);
     } catch (e) {
-      ScaffoldMessenger.of(
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _openFile(String url) async {
+    if (url.endsWith('.pdf')) {
+      final uri = Uri.parse(url);
+      try {
+        final can = await canLaunchUrl(uri);
+        if (!can) throw 'canLaunchUrl false';
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open PDF')),
+          );
+        }
+      }
+    } else {
+      Navigator.push(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error sending message: $e')));
+        MaterialPageRoute(
+          builder: (_) => GalleryPage(urls: [url], initialIndex: 0),
+        ),
+      );
     }
   }
 
@@ -73,27 +104,15 @@ class _ChatPageState extends State<ChatPage> {
         backgroundColor: const Color(0xFF1E405B),
         title: Row(
           children: [
-            Text(
-              widget.otherUserName,
-              style: const TextStyle(color: Colors.white),
-            ),
+            Text(widget.otherUserName, style: const TextStyle(color: Colors.white)),
             const SizedBox(width: 6),
             PresenceDot(widget.otherUserId),
           ],
         ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Stack(
-              alignment: Alignment.bottomRight,
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundImage: const AssetImage('assets/other_profile.jpg'),
-                ),
-                PresenceDot(widget.otherUserId),
-              ],
-            ),
+          IconButton(
+            icon: const Icon(Icons.attach_file, color: Color(0xFFFBF1D1)),
+            onPressed: _uploading ? null : _pickFile,
           ),
         ],
       ),
@@ -103,61 +122,61 @@ class _ChatPageState extends State<ChatPage> {
             child: StreamBuilder<List<Map<String, dynamic>>>(
               stream: _messagingService.getMessages(_conversationId),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
+                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                final messages = snapshot.data!;
+                if (messages.isEmpty) {
+                  return const Center(child: Text('No messages yet.', style: TextStyle(color: Colors.white70)));
                 }
-                if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}'));
-                }
-                final messages = snapshot.data ?? [];
                 return ListView.builder(
                   reverse: true,
                   itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[index];
-                    final isMe =
-                        message['senderId'] == _messagingService.currentUserId;
-                    return ListTile(
-                      title: Align(
-                        alignment: isMe
-                            ? Alignment.centerRight
-                            : Alignment.centerLeft,
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: isMe
-                                ? const Color(0xFFFBF1D1)
-                                : Colors.grey.shade300,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            message['content'],
-                            style: const TextStyle(fontSize: 16),
-                          ),
+                  itemBuilder: (_, index) {
+                    final msg = messages[index];
+                    final isMe = msg['senderId'] == _messagingService.currentUserId;
+                    final isText = msg['isText'] ?? true;
+                    return Align(
+                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: isMe ? const Color(0xFFFBF1D1) : Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ),
-                      subtitle: message['timestamp'] != null
-                          ? Align(
-                              alignment: isMe
-                                  ? Alignment.centerRight
-                                  : Alignment.centerLeft,
-                              child: Text(
-                                (message['timestamp'] as Timestamp)
-                                    .toDate()
-                                    .toString(),
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.white70,
-                                ),
+                        child: isText
+                            ? Text(msg['content'], style: const TextStyle(fontSize: 16))
+                            : GestureDetector(
+                                onTap: () => _openFile(msg['content']),
+                                child: msg['content'].endsWith('.pdf')
+                                    ? Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.picture_as_pdf,
+                                              color: Colors.red, size: 28),
+                                          const SizedBox(width: 6),
+                                          Text('PDF', style: TextStyle(color: Colors.grey.shade800)),
+                                        ],
+                                      )
+                                    : ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          msg['content'],
+                                          width: 200,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) =>
+                                              const Icon(Icons.broken_image),
+                                        ),
+                                      ),
                               ),
-                            )
-                          : null,
+                      ),
                     );
                   },
                 );
               },
             ),
           ),
+          if (_uploading) const LinearProgressIndicator(),
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Row(
@@ -166,10 +185,8 @@ class _ChatPageState extends State<ChatPage> {
                   child: TextField(
                     controller: _messageController,
                     decoration: InputDecoration(
-                      hintText: 'Type a message...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
+                      hintText: 'Type a message…',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
                       filled: true,
                       fillColor: Colors.white,
                     ),
@@ -178,7 +195,7 @@ class _ChatPageState extends State<ChatPage> {
                 const SizedBox(width: 8),
                 IconButton(
                   icon: const Icon(Icons.send, color: Color(0xFFFBF1D1)),
-                  onPressed: _sendMessage,
+                  onPressed: _sendText,
                 ),
               ],
             ),

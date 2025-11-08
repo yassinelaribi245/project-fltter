@@ -2,34 +2,109 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:project_flutter/pages/explore_page.dart';
-import 'firebase_options.dart';
-import 'services/auth_service.dart';
-import 'services/messaging_service.dart';
-import 'pages/login_page.dart';
-import 'pages/profile.dart';
-import 'pages/conversations_page.dart';
-import 'pages/other_profile.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'services/presence_fcm.dart';
-import 'pages/chat_page.dart';
+import 'package:project_flutter/pages/discover_page.dart';
+import 'package:project_flutter/pages/explore_page.dart';
+import 'package:project_flutter/pages/login_page.dart';
+import 'package:project_flutter/pages/profile.dart';
+import 'package:project_flutter/pages/conversations_page.dart';
+import 'package:project_flutter/pages/chat_page.dart';
+import 'package:project_flutter/pages/other_profile.dart';
+import 'package:project_flutter/services/auth_service.dart';
+import 'package:project_flutter/services/friend_service.dart';
+import 'package:project_flutter/services/messaging_service.dart';
+import 'package:project_flutter/services/notification_service.dart';
+import 'package:project_flutter/services/presence_fcm.dart';
+import 'package:project_flutter/firebase_options.dart';
+import 'package:project_flutter/widgets/notification_badge.dart';
+import 'package:project_flutter/pages/notifications_page.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
+import 'package:project_flutter/pages/post_detail_page.dart';
+import 'package:project_flutter/pages/other_profile.dart';
+import 'package:project_flutter/services/messaging_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+void _handleBackgroundMessage(RemoteMessage msg) {
+  final data = msg.data;
+  final nav = navigatorKey.currentState;
+  final type = data['type'];
+  if (nav == null) return;
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+
+    switch (type) {
+      case 'like':
+      case 'comment':
+        final postId = data['postId'];
+        if (postId != null) {
+          nav.push(
+            MaterialPageRoute(
+              builder: (_) => PostDetailPage(
+                postId: postId,
+                postOwnerUid: '',
+              ), // owner fetched inside
+            ),
+          );
+        }
+        break;
+
+      case 'friendRequest':
+        final fromUid = data['fromUid'];
+        if (fromUid != null) {
+          nav.push(
+            MaterialPageRoute(
+              builder: (_) => OtherProfilePage(
+                userId: fromUid,
+                userName: data['title'] ?? 'Someone',
+              ),
+            ),
+          );
+        }
+        break;
+
+      case 'friendAccepted':
+        // nothing to open – just show the snack / toast
+        break;
+
+      case 'message':
+        final convId = data['conversationId'];
+        if (convId != null) {
+          final parts = convId.split('_');
+          final myUid = FirebaseAuth.instance.currentUser?.uid;
+          final otherId = parts.firstWhere((u) => u != myUid, orElse: () => '');
+          if (otherId.isNotEmpty) {
+            MessagingService().getUserData(otherId).then((user) {
+              nav.push(
+                MaterialPageRoute(
+                  builder: (_) => ChatPage(
+                    otherUserId: otherId,
+                    otherUserName: user?['name'] ?? 'Unknown',
+                  ),
+                ),
+              );
+            });
+          }
+        }
+        break;
+    }
+  });
+}
 
 Future<void> _handleMessageTap(RemoteMessage msg) async {
   final cid = msg.data['conversationId'] as String?;
   if (cid == null) return;
-
   final parts = cid.split('_');
   final myUid = FirebaseAuth.instance.currentUser?.uid;
   if (myUid == null) return;
   final otherUid = parts.firstWhere((u) => u != myUid, orElse: () => '');
-
   final userDoc = await FirebaseFirestore.instance
       .doc('users/$otherUid/public/data')
       .get();
   final name = userDoc.data()?['name'] ?? 'Unknown';
-
   WidgetsBinding.instance.addPostFrameCallback((_) {
     final context = navigatorKey.currentContext;
     if (context == null) return;
@@ -46,11 +121,71 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
+  /* ----------  FCM  ---------- */
   FirebaseMessaging.onBackgroundMessage(PresenceFCM.bgHandler);
-  FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageTap);
-  final RemoteMessage? initial = await FirebaseMessaging.instance
-      .getInitialMessage();
-  if (initial != null) _handleMessageTap(initial);
+
+  /* ----------  SINGLE ROUTER  ---------- */
+  Future<void> _route(RemoteMessage? message) async {
+    if (message == null) return;
+    final data = message.data;
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+
+    switch (data['type']) {
+      case 'like':
+      case 'comment':
+        final postId = data['postId'];
+        if (postId != null) {
+          nav.push(
+            MaterialPageRoute(
+              builder: (_) => PostDetailPage(postId: postId, postOwnerUid: ''),
+            ),
+          );
+        }
+        break;
+
+      case 'friendRequest':
+        final fromUid = data['fromUid'];
+        if (fromUid != null) {
+          nav.push(
+            MaterialPageRoute(
+              builder: (_) => OtherProfilePage(
+                userId: fromUid,
+                userName: data['title'] ?? 'Someone',
+              ),
+            ),
+          );
+        }
+        break;
+
+      case 'friendAccepted':
+        break; // nothing to open
+
+      case 'message':
+        final convId = data['conversationId'];
+        if (convId != null) {
+          final parts = convId.split('_');
+          final myUid = FirebaseAuth.instance.currentUser?.uid;
+          final otherId = parts.firstWhere((u) => u != myUid, orElse: () => '');
+          if (otherId.isNotEmpty) {
+            MessagingService().getUserData(otherId).then((user) {
+              nav.push(
+                MaterialPageRoute(
+                  builder: (_) => ChatPage(
+                    otherUserId: otherId,
+                    otherUserName: user?['name'] ?? 'Unknown',
+                  ),
+                ),
+              );
+            });
+          }
+        }
+        break;
+    }
+  }
+
+  final initial = await FirebaseMessaging.instance.getInitialMessage();
+  if (initial != null) _route(initial);
 
   runApp(const MyApp());
 }
@@ -102,6 +237,8 @@ class BottomNavExample extends StatefulWidget {
 
 class _BottomNavExampleState extends State<BottomNavExample>
     with WidgetsBindingObserver {
+  int _selectedIndex = 0;
+
   @override
   void initState() {
     super.initState();
@@ -125,11 +262,13 @@ class _BottomNavExampleState extends State<BottomNavExample>
 
   void _init() async {
     await PresenceFCM().saveFcmToken();
-    await PresenceFCM().ensurePresenceDoc();   // ← ADD THIS LINE
+    await PresenceFCM().ensurePresenceDoc();
     await PresenceFCM().setPresence(true);
   }
 
-  int _selectedIndex = 0;
+  void onDestinationSelected(int index) {
+    setState(() => _selectedIndex = index);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -138,7 +277,6 @@ class _BottomNavExampleState extends State<BottomNavExample>
     const user1Uid = 'FATWRhiMnMZyVlNqt8cLsYK9JJy2';
     const user2Uid = 'xWa6jgLycHgL14JlOeor1Y9XyzA3';
 
-    // Check if user is authenticated
     final currentUserId = authService.currentUser?.uid;
     if (currentUserId == null) {
       return const Scaffold(
@@ -151,10 +289,8 @@ class _BottomNavExampleState extends State<BottomNavExample>
       );
     }
 
-    // Determine the other user's UID based on the logged-in user
     final otherUserId = currentUserId == user1Uid ? user2Uid : user1Uid;
 
-    // Fetch the other user's name dynamically for Home tab
     Widget homePage = FutureBuilder<Map<String, dynamic>?>(
       future: messagingService.getUserData(otherUserId),
       builder: (context, snapshot) {
@@ -178,64 +314,68 @@ class _BottomNavExampleState extends State<BottomNavExample>
 
     final List<Widget> pages = [
       const ExplorePage(),
-      homePage,
+      const DiscoverPage(),
+      const NotificationsPage(),
       const ConversationsPage(),
       const ProfilePage(),
     ];
 
-    void onDestinationSelected(int index) {
-      setState(() {
-        _selectedIndex = index;
-      });
-    }
-
     return Scaffold(
       body: pages[_selectedIndex],
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-        child: Material(
-          elevation: 8,
-          borderRadius: BorderRadius.circular(25),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(25),
-            child: NavigationBar(
-              height: 65,
-              backgroundColor: Colors.grey.shade400,
-              indicatorColor: const Color(0xFFFBF1D1).withOpacity(0.3),
-              selectedIndex: _selectedIndex,
-              onDestinationSelected: onDestinationSelected,
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(
-                    Icons.assistant_navigation,
-                    color: Color(0xFFFBF1D1),
-                  ),
-                  selectedIcon: Icon(
-                    Icons.assistant_navigation,
-                    color: Color(0xFFFBF1D1),
-                  ),
-                  label: 'Home',
+      bottomNavigationBar: Container(
+        height: 90,
+        color: Colors.transparent,
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: Container(
+            height: 65,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.95),
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.search, color: Color(0xFFFBF1D1)),
-                  selectedIcon: Icon(Icons.search, color: Color(0xFFFBF1D1)),
-                  label: 'Search',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.message, color: Color(0xFFFBF1D1)),
-                  selectedIcon: Icon(Icons.message, color: Color(0xFFFBF1D1)),
-                  label: 'Messages',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.person, color: Color(0xFFFBF1D1)),
-                  selectedIcon: Icon(Icons.person, color: Color(0xFFFBF1D1)),
-                  label: 'Profile',
-                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _navItem(0, Icons.assistant_navigation),
+                _navItem(1, Icons.search),
+                _navItem(2, Icons.notifications),
+                _navItem(3, Icons.message),
+                _navItem(4, Icons.person),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _navItem(int index, IconData icon) {
+    final isSelected = _selectedIndex == index;
+    return IconButton(
+      icon: index == 2
+          ? NotificationBadge(
+              child: Icon(
+                icon,
+                color: isSelected
+                    ? const Color(0xFF1E405B)
+                    : Colors.grey.shade700,
+              ),
+            )
+          : Icon(
+              icon,
+              color: isSelected
+                  ? const Color(0xFF1E405B)
+                  : Colors.grey.shade700,
+            ),
+      onPressed: () => onDestinationSelected(index),
     );
   }
 }

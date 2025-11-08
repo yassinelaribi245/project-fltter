@@ -6,6 +6,7 @@ import 'package:project_flutter/services/messaging_service.dart';
 import 'package:project_flutter/services/post_service.dart';
 import 'package:project_flutter/pages/admin_posts_page.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:project_flutter/pages/friends_list_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -56,9 +57,6 @@ class _ProfilePageState extends State<ProfilePage> {
     // TODO: Add settings logic here
   }
 
-  void _onFriendsPressed() {
-    // TODO: Add friends logic here
-  }
 
   void _onLogoutPressed(BuildContext context) async {
     await PresenceFCM().deleteFcmToken();
@@ -147,7 +145,10 @@ class _ProfilePageState extends State<ProfilePage> {
 
                       /* ---------- FRIENDS ---------- */
                       ElevatedButton(
-                        onPressed: _onFriendsPressed,
+                        onPressed: () => Navigator.push(
+  context,
+  MaterialPageRoute(builder: (_) => const FriendsListPage()),
+),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFBF1D1),
                           foregroundColor: const Color(0xFF000000),

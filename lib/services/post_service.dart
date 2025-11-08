@@ -1,5 +1,10 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import 'package:project_flutter/services/notification_service.dart';
+import 'package:project_flutter/models/notification.dart' show NotifType;
 
 class PostService {
   final FirebaseFirestore _fs = FirebaseFirestore.instance;
@@ -41,21 +46,51 @@ class PostService {
     await _fs.doc('posts/$postId').update({'confirmed': true});
   }
 
-  /* -------- TOGGLE LIKE ON POST -------- */
-  Future<void> likePost(String postId) async {
-    if (uid == null) return;
-    final likeRef = _fs.doc('posts/$postId/likes/$uid');
-    final postRef = _fs.doc('posts/$postId');
+/* -------- TOGGLE LIKE ON POST -------- */
+Future<void> likePost(String postId) async {
+  if (uid == null) return;
+  final likeRef = _fs.doc('posts/$postId/likes/$uid');
+  final postRef = _fs.doc('posts/$postId');
 
-    final likeSnap = await likeRef.get();
-    if (likeSnap.exists) {
-      await likeRef.delete();
-      await postRef.update({'likeCount': FieldValue.increment(-1)});
-    } else {
-      await likeRef.set({'likedAt': FieldValue.serverTimestamp()});
-      await postRef.update({'likeCount': FieldValue.increment(1)});
+  final likeSnap = await likeRef.get();
+  if (likeSnap.exists) {
+    // UNLIKE
+    await likeRef.delete();
+    await postRef.update({'likeCount': FieldValue.increment(-1)});
+  } else {
+    // LIKE
+    await likeRef.set({'likedAt': FieldValue.serverTimestamp()});
+    await postRef.update({'likeCount': FieldValue.increment(1)});
+
+    /* =====  SEND NOTIFICATION  ===== */
+    final postDoc = await postRef.get();
+    final postOwner = postDoc.data()?['ownerUid'];
+    if (postOwner != null && postOwner != uid) {
+      final meSnap = await _fs.doc('users/$uid/public/data').get();
+      final meName = meSnap.data()?['name'] ?? 'Someone';
+
+      // 1. Firestore notification
+      await NotificationService().add(
+        toUid: postOwner,
+        fromUid: uid!,
+        fromName: meName,
+        type: NotifType.like,
+        postId: postId,
+      );
+
+      // 2. Push notification
+      await http.post(
+        Uri.parse("https://39a1782c9179.ngrok-free.app/notifyLike"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "toUserId": postOwner,
+          "fromName": meName,
+          "postId": postId,
+        }),
+      );
     }
   }
+}
 
   Stream<bool> isLiked(String postId) {
     if (uid == null) return Stream.value(false);
@@ -77,7 +112,18 @@ class PostService {
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
+/* ---------- single post stream ---------- */
+Stream<Post?> streamPostById(String postId) {
+  return _fs.doc('posts/$postId').snapshots().map(
+        (snap) => snap.exists ? Post.fromDoc(snap) : null,
+      );
+}
 
+/* ---------- fetch any user public data ---------- */
+Future<Map<String, dynamic>?> getUserData(String uid) async {
+  final snap = await _fs.doc('users/$uid/public/data').get();
+  return snap.data();
+}
   Stream<List<Comment>> streamComments(String postId) {
     return _fs
         .collection('posts/$postId/comments')
@@ -108,7 +154,25 @@ class PostService {
         .snapshots()
         .map((s) => s.exists);
   }
-
+Future<void> createImagePost({
+  required String content,
+  required List<String> topics,
+  required List<String> images,
+}) async {
+  final uid = _auth.currentUser?.uid;
+  if (uid == null) throw Exception('Not signed in');
+  final doc = _fs.collection('posts').doc();
+  await doc.set({
+    'ownerUid': uid,
+    'content': content.trim(),
+    'topics': topics,
+    'images': images,
+    'likeCount': 0,
+    'commentCount': 0,
+    'confirmed': false,
+    'createdAt': FieldValue.serverTimestamp(),
+  });
+}
   /* -------- ADMIN CHECK -------- */
   Stream<bool> isCurrentUserAdmin() {
     final uid = _auth.currentUser?.uid;
@@ -144,6 +208,7 @@ class Post {
   final int commentCount;
   final bool confirmed;
   final DateTime? createdAt;
+  final List<String>? images;
 
   Post({
     required this.id,
@@ -154,6 +219,7 @@ class Post {
     required this.commentCount,
     required this.confirmed,
     this.createdAt,
+    this.images,
   });
 
   factory Post.fromDoc(DocumentSnapshot doc) {
@@ -167,6 +233,7 @@ class Post {
       commentCount: d['commentCount'] ?? 0,
       confirmed: d['confirmed'] ?? false,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
+      images: List<String>.from(d['images'] ?? []),
     );
   }
 }

@@ -1,6 +1,10 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:project_flutter/models/notification.dart';
+import 'package:project_flutter/services/notification_service.dart';
 import 'package:project_flutter/services/post_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -38,33 +42,62 @@ class _CommentsSheetState extends State<CommentsSheet> {
       (await FirebaseFirestore.instance.doc('users/$uid/public/data').get())
           .data();
 
-  /* add comment + increment counter */
-  Future<void> _addComment() async {
-    if (_ctrl.text.trim().isEmpty) return;
-    final uid = _auth.currentUser?.uid;
-    if (uid == null) return;
+  /* add comment + increment counter + notify */
+Future<void> _addComment() async {
+  if (_ctrl.text.trim().isEmpty) return;
+  final uid = _auth.currentUser?.uid;
+  if (uid == null) return;
 
-    final batch = FirebaseFirestore.instance.batch();
+  final batch = FirebaseFirestore.instance.batch();
 
-    /* 1. create comment doc */
-    final commentRef = FirebaseFirestore.instance
-        .collection('posts/${widget.post.id}/comments')
-        .doc();
-    batch.set(commentRef, {
-      'ownerUid': uid,
-      'postId': widget.post.id,
-      'content': _ctrl.text.trim(),
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+  /* 1. create comment doc */
+  final commentRef = FirebaseFirestore.instance
+      .collection('posts/${widget.post.id}/comments')
+      .doc();
+  batch.set(commentRef, {
+    'ownerUid': uid,
+    'postId': widget.post.id,
+    'content': _ctrl.text.trim(),
+    'createdAt': FieldValue.serverTimestamp(),
+  });
 
-    /* 2. increment commentCount on post */
-    final postRef =
-        FirebaseFirestore.instance.collection('posts').doc(widget.post.id);
-    batch.update(postRef, {'commentCount': FieldValue.increment(1)});
+  /* 2. increment commentCount on post */
+  final postRef =
+      FirebaseFirestore.instance.collection('posts').doc(widget.post.id);
+  batch.update(postRef, {'commentCount': FieldValue.increment(1)});
 
-    await batch.commit();
-    _ctrl.clear();
+  await batch.commit();
+  _ctrl.clear();
+
+  /* 3. send notification to post owner */
+  final postDoc = await postRef.get();
+  final postOwner = postDoc.data()?['ownerUid'];
+  if (postOwner != null && postOwner != uid) {
+    final me =
+        await FirebaseFirestore.instance.doc('users/$uid/public/data').get();
+    final meName = me.data()?['name'] ?? 'Someone';
+
+    // 3a. Firestore notification
+    await NotificationService().add(
+      toUid: postOwner,
+      fromUid: uid,
+      fromName: meName,
+      type: NotifType.comment,
+      postId: widget.post.id,
+    );
+
+    // 3b. Push notification
+    await http.post(
+      Uri.parse("https://39a1782c9179.ngrok-free.app/notifyComment"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        "toUserId": postOwner,
+        "fromName": meName,
+        "postId": widget.post.id,
+      }),
+    );
   }
+}
 
   /* delete comment + decrement counter */
   Future<void> _deleteComment(String commentId) async {

@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+
+import 'package:project_flutter/services/file_upload_service.dart';
 
 class MessagingService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -30,7 +34,51 @@ class MessagingService {
 
     return conversationId;
   }
+Future<void> sendFileMessage(String conversationId, File file) async {
+  final currentUserId = this.currentUserId;
+  if (currentUserId == null) throw Exception('User not logged in');
 
+  final folder = file.path.endsWith('.pdf') ? 'pdfs' : 'images';
+  final url = await FileUploadService.uploadFile(folder: folder, file: file);
+  if (url == null) throw Exception('Upload failed');
+
+  /* 1. write message to Firestore */
+  final messagesRef = _firestore
+      .collection('conversations')
+      .doc(conversationId)
+      .collection('messages');
+  await messagesRef.add({
+    'senderId': currentUserId,
+    'isText': false,
+    'content': url,
+    'timestamp': FieldValue.serverTimestamp(),
+  });
+
+  /* 2. update lastMessageTime */
+  await _firestore.collection('conversations').doc(conversationId).update({
+    'lastMessageTime': FieldValue.serverTimestamp(),
+  });
+
+  /* 3. push notification */
+  final convSnap = await _firestore.collection('conversations').doc(conversationId).get();
+  final participants = List<String>.from(convSnap.data()?['participants'] ?? []);
+  final recipientUid = participants.firstWhere((p) => p != currentUserId, orElse: () => '');
+  if (recipientUid.isEmpty) return;
+
+  final me = await _firestore.doc('users/$currentUserId/public/data').get();
+  final senderName = me.data()?['name'] ?? 'Someone';
+
+  await http.post(
+    Uri.parse("https://39a1782c9179.ngrok-free.app/notifyMessage"),
+    headers: {"Content-Type": "application/json"},
+    body: jsonEncode({
+      "toUserId": recipientUid,
+      "title": senderName,
+      "body": "Sent a file",
+      "conversationId": conversationId,
+    }),
+  );
+}
   Future<void> sendMessage(String conversationId, String content) async {
     final currentUserId = this.currentUserId;
     if (currentUserId == null) throw Exception('User not logged in');
@@ -73,7 +121,7 @@ class MessagingService {
 
       // 3c. call Node endpoint
       await http.post(
-        Uri.parse("https://5a8cb740e59b.ngrok-free.app/notifyMessage"),
+        Uri.parse("https://39a1782c9179.ngrok-free.app/notifyMessage"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "toUserId": recipientUid,
@@ -87,19 +135,20 @@ class MessagingService {
     }
   }
 
-  Stream<List<Map<String, dynamic>>> getMessages(String conversationId) {
-    return _firestore
-        .collection('conversations')
-        .doc(conversationId)
-        .collection('messages')
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map((doc) => {'id': doc.id, ...doc.data()})
-              .toList(),
-        );
-  }
+  /* ---------- NEW: return BOTH text & file messages ---------- */
+Stream<List<Map<String, dynamic>>> getMessages(String conversationId) {
+  final currentUserId = this.currentUserId;
+  if (currentUserId == null) return Stream.value([]);
+  return _firestore
+      .collection('conversations')
+      .doc(conversationId)
+      .collection('messages')
+      .orderBy('timestamp', descending: true)
+      .snapshots()
+      .map(
+        (snap) => snap.docs.map((d) => {'id': d.id, ...d.data()}).toList(),
+      );
+}
 
   Stream<List<Map<String, dynamic>>> getConversations() {
     final currentUserId = this.currentUserId;

@@ -4,6 +4,7 @@ import 'package:project_flutter/services/messaging_service.dart';
 import 'package:project_flutter/pages/create_post_page.dart';
 import 'package:project_flutter/pages/other_profile.dart';
 import 'package:project_flutter/widgets/post_card.dart';
+import 'package:project_flutter/widgets/search_user_delegate.dart';
 
 class ExplorePage extends StatefulWidget {
   const ExplorePage({super.key});
@@ -30,18 +31,15 @@ class _ExplorePageState extends State<ExplorePage> {
     final data = await _msgService.getUserData(id);
     if (!mounted) return;
     if (data == null || data['name'] == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("User not found")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("User not found")));
       return;
     }
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => OtherProfilePage(
-          userId: id,
-          userName: data['name'],
-        ),
+        builder: (_) => OtherProfilePage(userId: id, userName: data['name']),
       ),
     );
   }
@@ -56,15 +54,8 @@ class _ExplorePageState extends State<ExplorePage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.search, color: Color(0xFFFBF1D1)),
-            onPressed: () async {
-              final id = await showDialog<String>(
-                context: context,
-                builder: (_) => _SearchDialog(controller: _searchCtrl),
-              );
-              if (id != null && id.isNotEmpty) {
-                _searchCtrl.text = id;
-                _search();
-              }
+            onPressed: () {
+              showSearch(context: context, delegate: SearchUserDelegate());
             },
           ),
         ],
@@ -99,7 +90,12 @@ class _ExplorePageState extends State<ExplorePage> {
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   itemCount: posts.length,
-                  itemBuilder: (_, i) => PostCard(post: posts[i]),
+                  itemBuilder: (_, i) {
+                    final post = posts[i];
+                    return (post.images != null && post.images!.isNotEmpty)
+                        ? ImagePostCard(post: post)
+                        : PostCard(post: post);
+                  },
                 );
               },
             ),
@@ -131,12 +127,20 @@ class _SearchDialog extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text("CANCEL", style: TextStyle(color: Color(0xFFFBF1D1))),
+          child: const Text(
+            "CANCEL",
+            style: TextStyle(color: Color(0xFFFBF1D1)),
+          ),
         ),
         ElevatedButton(
           onPressed: () => Navigator.pop(context, controller.text.trim()),
-          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFBF1D1)),
-          child: const Text("SEARCH", style: TextStyle(color: Color(0xFF1E405B))),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFFBF1D1),
+          ),
+          child: const Text(
+            "SEARCH",
+            style: TextStyle(color: Color(0xFF1E405B)),
+          ),
         ),
       ],
     );
