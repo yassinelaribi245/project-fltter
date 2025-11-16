@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:project_flutter/models/notification.dart';
+import 'package:project_flutter/server_url.dart';
 import 'package:project_flutter/services/notification_service.dart';
 import 'package:project_flutter/services/post_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -34,7 +35,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   Widget _avatar(String? url) => CircleAvatar(
         radius: 18,
         backgroundImage: (url != null && url.isNotEmpty)
-            ? NetworkImage(url)
+            ? NetworkImage(kNgrokBase +url)
             : const AssetImage('assets/other_profile.jpg') as ImageProvider,
       );
 
@@ -88,7 +89,7 @@ Future<void> _addComment() async {
 
     // 3b. Push notification
     await http.post(
-      Uri.parse("https://39a1782c9179.ngrok-free.app/notifyComment"),
+      Uri.parse("$kNgrokBase/notifyComment"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({
         "toUserId": postOwner,

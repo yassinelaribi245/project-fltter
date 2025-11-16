@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:project_flutter/pages/gallery_page.dart';
+import 'package:project_flutter/server_url.dart';
 import 'package:project_flutter/services/post_service.dart';
 import 'package:project_flutter/widgets/post_card_admin.dart';
 
@@ -41,44 +42,6 @@ class AdminPostsPage extends StatelessWidget {
               return Column(
                 children: [
                   PostCardAdmin(post: post),
-                  if (post.images != null && post.images!.isNotEmpty)
-                    SizedBox(
-                      height: 100,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: post.images!.length,
-                        itemBuilder: (_, idx) => Padding(
-                          padding: const EdgeInsets.only(left: 12),
-                          child: GestureDetector(
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => GalleryPage(
-                                  urls: post.images!,
-                                  initialIndex: idx,
-                                ),
-                              ),
-                            ),
-                            child: post.images![idx].endsWith('.pdf')
-                                ? const Icon(
-                                    Icons.picture_as_pdf,
-                                    size: 80,
-                                    color: Colors.red,
-                                  )
-                                : ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(
-                                      post.images![idx],
-                                      width: 100,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) =>
-                                          const Icon(Icons.broken_image),
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      ),
-                    ),
                   const SizedBox(height: 12),
                 ],
               );

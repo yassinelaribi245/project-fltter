@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
+import 'package:project_flutter/server_url.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class GalleryPage extends StatelessWidget {
@@ -44,7 +45,7 @@ class GalleryPage extends StatelessWidget {
                 itemCount: imageUrls.length,
                 pageController: PageController(initialPage: initialPage),
                 builder: (context, i) => PhotoViewGalleryPageOptions(
-                  imageProvider: NetworkImage(imageUrls[i]),
+                  imageProvider: NetworkImage(kNgrokBase +imageUrls[i]),
                   minScale: PhotoViewComputedScale.contained,
                   maxScale: PhotoViewComputedScale.covered * 2,
                 ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:animate_do/animate_do.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:project_flutter/pages/topic_picker_screen.dart';
 import '../services/auth_service.dart';
 
 class SignUpPage extends StatefulWidget {
@@ -47,11 +48,10 @@ Future<void> _submit() async {
   final state = _formKey.currentState;
   if (state == null || !state.validate()) return;
   state.save();
-
   setState(() => _loading = true);
 
   try {
-    // 1. create Firebase-Auth account
+    /* 1. create Firebase-Auth account – NOW request.auth.uid exists */
     final cred = await _auth.signUp(
       _emailCtrl.text.trim(),
       _passCtrl.text.trim(),
@@ -59,42 +59,41 @@ Future<void> _submit() async {
     final user = cred?.user;
     if (user == null) throw Exception('Sign-up failed');
 
-    // 2. update display-name
+    /* 2. update display-name */
     final fullName = '${_firstCtrl.text.trim()} ${_lastCtrl.text.trim()}';
     await user.updateDisplayName(fullName);
 
-    // 3. write public + private sub-docs in a batch
+    /* 3. write PUBLIC docs (safe because request.auth.uid == uid) */
     final uid = user.uid;
     final batch = FirebaseFirestore.instance.batch();
 
-    final publicRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('public')
-        .doc('data');
-
+    final publicRef = FirebaseFirestore.instance.doc('users/$uid/public/data');
     batch.set(publicRef, {
       'name': fullName,
       'bio': '',
-      'profilePicture': null, // add later
+      'profilePicture': null,
     });
 
-    final privateRef = FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('private')
-        .doc('data');
-
-    batch.set(privateRef, {
-      'phone': _phoneCtrl.text.trim(),
-      'email': _emailCtrl.text.trim(),
-      'isAdmin': false,
-    });
+    final tasteRef = FirebaseFirestore.instance.doc('users/$uid/public/taste');
+    batch.set(tasteRef, <String, dynamic>{});
 
     await batch.commit();
 
-    // 4. go back to login
-    if (mounted) Navigator.pop(context);
+    /* 4. create PRIVATE doc – also safe */
+    await FirebaseFirestore.instance.doc('users/$uid/private/data').set({
+      'phone': _phoneCtrl.text.trim(),
+      'email': _emailCtrl.text.trim(),
+      'isAdmin': false,
+      'fcmToken': null,   // harmless placeholder
+    });
+
+    /* 5. continue to topic picker */
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const TopicPickerScreen()),
+      );
+    }
   } catch (e) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

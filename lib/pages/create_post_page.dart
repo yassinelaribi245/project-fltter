@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:project_flutter/server_url.dart';
 import 'package:project_flutter/services/post_service.dart';
 import 'package:project_flutter/services/file_upload_service.dart';
+import 'package:project_flutter/app_hashtags.dart';
 
 class CreatePostPage extends StatefulWidget {
   const CreatePostPage({super.key});
@@ -15,6 +17,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
   final _ctrl = TextEditingController();
   final _service = PostService();
   final _topics = <String>[];
+
   bool _isImagePost = false;
   List<String> _imageUrls = [];
 
@@ -22,9 +25,16 @@ class _CreatePostPageState extends State<CreatePostPage> {
   bool _uploading = false;
 
   bool get _loading => _uploading || _submitting;
+  bool get _hasTopics => _topics.isNotEmpty;
 
   Future<void> _submit() async {
     if (_ctrl.text.trim().isEmpty && !_isImagePost) return;
+    if (!_hasTopics) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pick at least one topic')),
+      );
+      return;
+    }
     setState(() => _submitting = true);
 
     try {
@@ -108,48 +118,29 @@ class _CreatePostPageState extends State<CreatePostPage> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    const Text('Pick at least one topic', style: TextStyle(color: Colors.white70)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: kAppHashtags.map((t) {
+                        final isSelected = _topics.contains(t);
+                        return FilterChip(
+                          label: Text(t),
+                          selected: isSelected,
+                          onSelected: (val) => setState(() {
+                            val ? _topics.add(t) : _topics.remove(t);
+                          }),
+                          selectedColor: const Color(0xFFFBF1D1),
+                          backgroundColor: Colors.white,
+                        );
+                      }).toList(),
+                    ),
                     if (_isImagePost) ...[
                       const SizedBox(height: 12),
                       ElevatedButton.icon(
-                        onPressed: _uploading
-                            ? null
-                            : () async {
-                                setState(() => _uploading = true);
-                                final result = await FilePicker.platform.pickFiles(
-                                  type: FileType.custom,
-                                  allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
-                                  allowMultiple: true,
-                                );
-                                if (result == null || result.files.isEmpty) {
-                                  setState(() => _uploading = false);
-                                  return;
-                                }
-                                final urls = <String>[];
-                                for (final platformFile in result.files) {
-                                  final path = platformFile.path;
-                                  if (path == null) continue;
-                                  final folder =
-                                      platformFile.extension == 'pdf' ? 'pdfs' : 'images';
-                                  final url = await FileUploadService.uploadFile(
-                                    folder: folder,
-                                    file: File(path),
-                                  );
-                                  if (url != null) urls.add(url);
-                                }
-                                setState(() {
-                                  _imageUrls = urls;
-                                  _uploading = false;
-                                });
-                                if (urls.isEmpty) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('No files uploaded')),
-                                  );
-                                  return;
-                                }
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('${urls.length} file(s) attached')),
-                                );
-                              },
+                        onPressed: _uploading ? null : _pickAndUpload,
                         icon: const Icon(Icons.attach_file),
                         label: _uploading
                             ? const SizedBox(
@@ -163,7 +154,6 @@ class _CreatePostPageState extends State<CreatePostPage> {
                           foregroundColor: const Color(0xFF1E405B),
                         ),
                       ),
-                      // PREVIEW + REMOVE BAR (images + pdfs)
                       if (_imageUrls.isNotEmpty) ...[
                         const SizedBox(height: 12),
                         SizedBox(
@@ -189,7 +179,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                                             ),
                                           )
                                         : Image.network(
-                                            _imageUrls[i],
+                                            kNgrokBase+_imageUrls[i],
                                             width: 100,
                                             height: 100,
                                             fit: BoxFit.cover,
@@ -197,7 +187,6 @@ class _CreatePostPageState extends State<CreatePostPage> {
                                                 const Icon(Icons.broken_image),
                                           ),
                                   ),
-                                  // REMOVE BUTTON (works for any file)
                                   InkWell(
                                     onTap: () => setState(() => _imageUrls.removeAt(i)),
                                     child: Container(
@@ -218,9 +207,9 @@ class _CreatePostPageState extends State<CreatePostPage> {
                         ),
                       ],
                     ],
-                    const SizedBox(height: 12),
+                    const Spacer(),
                     ElevatedButton(
-                      onPressed: _loading ? null : _submit,
+                      onPressed: !_hasTopics || _loading ? null : _submit,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFBF1D1),
                         minimumSize: const Size(double.infinity, 50),
@@ -231,9 +220,9 @@ class _CreatePostPageState extends State<CreatePostPage> {
                               width: 24,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text("Post"),
+                          : const Text('Post'),
                     ),
-                    const SizedBox(height: 20), // extra bottom padding
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
@@ -241,6 +230,43 @@ class _CreatePostPageState extends State<CreatePostPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _pickAndUpload() async {
+    setState(() => _uploading = true);
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      allowMultiple: true,
+    );
+    if (result == null || result.files.isEmpty) {
+      setState(() => _uploading = false);
+      return;
+    }
+    final urls = <String>[];
+    for (final platformFile in result.files) {
+      final path = platformFile.path;
+      if (path == null) continue;
+      final folder = platformFile.extension == 'pdf' ? 'pdfs' : 'images';
+      final url = await FileUploadService.uploadFile(
+        folder: folder,
+        file: File(path),
+      );
+      if (url != null) urls.add(url);
+    }
+    setState(() {
+      _imageUrls = urls;
+      _uploading = false;
+    });
+    if (urls.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No files uploaded')),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${urls.length} file(s) attached')),
     );
   }
 }

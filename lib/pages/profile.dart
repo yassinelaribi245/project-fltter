@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:animate_do/animate_do.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:project_flutter/server_url.dart';
+import 'dart:io';
 import 'package:project_flutter/services/presence_fcm.dart';
 import 'package:project_flutter/services/auth_service.dart';
 import 'package:project_flutter/services/messaging_service.dart';
@@ -7,6 +12,7 @@ import 'package:project_flutter/services/post_service.dart';
 import 'package:project_flutter/pages/admin_posts_page.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:project_flutter/pages/friends_list_page.dart';
+import 'package:project_flutter/services/file_upload_service.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -15,11 +21,17 @@ class ProfilePage extends StatefulWidget {
   _ProfilePageState createState() => _ProfilePageState();
 }
 
-class _ProfilePageState extends State<ProfilePage> {
+class _ProfilePageState extends State<ProfilePage>
+    with AutomaticKeepAliveClientMixin {
   final MessagingService _messagingService = MessagingService();
   final AuthService _authService = AuthService();
   String? userName;
   bool isLoading = true;
+  Map<String, dynamic>? userData;
+  bool _uploadingAvatar = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -27,44 +39,100 @@ class _ProfilePageState extends State<ProfilePage> {
     _fetchUserData();
   }
 
+  /* ----------  fetch user data  ---------- */
   Future<void> _fetchUserData() async {
     try {
-      final userId = _authService.currentUser?.uid;
-      if (userId != null) {
-        final data = await _messagingService.getUserData(userId);
-        setState(() {
-          userName = data?['name'] ?? 'Unknown User';
-          isLoading = false;
-        });
+      final uid = _authService.currentUser?.uid;
+      if (uid != null) {
+        final data = await _messagingService.getUserData(uid);
+        if (mounted) {
+          setState(() {
+            userData = data;
+            userName = data?['name'] ?? 'Unknown User';
+            isLoading = false;
+          });
+        }
       } else {
-        setState(() {
-          userName = 'Unknown User';
-          isLoading = false;
-        });
+        if (mounted) setState(() => isLoading = false);
       }
     } catch (e) {
-      setState(() {
-        userName = 'Unknown User';
-        isLoading = false;
-      });
+      if (mounted) setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error loading user data: $e')),
       );
     }
   }
 
-  void _onSettingsPressed() {
-    // TODO: Add settings logic here
+  /* ----------  change avatar  ---------- */
+  Future<void> _changeAvatar() async {
+    final choice = await showModalBottomSheet<int>(
+      context: context,
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.camera_alt),
+            title: const Text('Camera'),
+            onTap: () => Navigator.pop(context, 0),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo),
+            title: const Text('Gallery'),
+            onTap: () => Navigator.pop(context, 1),
+          ),
+        ],
+      ),
+    );
+    if (choice == null) return;
+
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: false,
+    );
+    if (result == null || result.files.single.path == null) return;
+    final file = File(result.files.single.path!);
+
+    setState(() => _uploadingAvatar = true);
+
+    final url = await FileUploadService.uploadFile(
+      folder: 'images',
+      file: file,
+    );
+
+    if (url == null) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Upload failed')),
+      );
+      setState(() => _uploadingAvatar = false);
+      return;
+    }
+
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    await FirebaseFirestore.instance
+        .doc('users/$uid/public/data')
+        .update({'profilePicture': url});
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Avatar updated')),
+      );
+      setState(() {
+        userData?['profilePicture'] = url;
+        _uploadingAvatar = false;
+      });
+    }
   }
 
-
+  /* ----------  logout  ---------- */
   void _onLogoutPressed(BuildContext context) async {
     await PresenceFCM().deleteFcmToken();
     await _authService.signOut();
   }
 
+  /* ----------  build  ---------- */
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Scaffold(
       backgroundColor: const Color(0xFF1E405B),
       body: isLoading
@@ -77,9 +145,36 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.start,
                     children: [
-                      const CircleAvatar(
-                        radius: 70,
-                        backgroundImage: AssetImage('assets/profile.jpg'),
+                      /* ----------  tappable avatar  ---------- */
+                      GestureDetector(
+                        onTap: _changeAvatar,
+                        child: Stack(
+                          alignment: Alignment.bottomRight,
+                          children: [
+                            CircleAvatar(
+                              radius: 70,
+                              backgroundImage: _uploadingAvatar
+                                  ? null
+                                  : (userData?['profilePicture'] != null &&
+                                          userData!['profilePicture'].isNotEmpty
+                                      ? NetworkImage(kNgrokBase +userData!['profilePicture'])
+                                      : const AssetImage('assets/profile.jpg')),
+                              child: _uploadingAvatar
+                                  ? const CircularProgressIndicator(strokeWidth: 2)
+                                  : null,
+                            ),
+                            Container(
+                              decoration: const BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Padding(
+                                padding: EdgeInsets.all(6),
+                                child: Icon(Icons.camera_alt, size: 20, color: Colors.white),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 20),
                       Text(
@@ -92,7 +187,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                       const SizedBox(height: 30),
 
-                      /* ---------- ADMIN BUTTON (visible only to admins) ---------- */
+                      /* ----------  ADMIN BUTTON (visible only to admins)  ---------- */
                       StreamBuilder<bool>(
                         stream: _authService.userStream
                             .map((u) => u?.uid)
@@ -128,9 +223,9 @@ class _ProfilePageState extends State<ProfilePage> {
                         },
                       ),
 
-                      /* ---------- SETTINGS ---------- */
+                      /* ----------  SETTINGS  ---------- */
                       ElevatedButton(
-                        onPressed: _onSettingsPressed,
+                        onPressed: () {/* TODO settings */},
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFBF1D1),
                           foregroundColor: const Color(0xFF000000),
@@ -143,12 +238,12 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                       const SizedBox(height: 15),
 
-                      /* ---------- FRIENDS ---------- */
+                      /* ----------  FRIENDS  ---------- */
                       ElevatedButton(
                         onPressed: () => Navigator.push(
-  context,
-  MaterialPageRoute(builder: (_) => const FriendsListPage()),
-),
+                          context,
+                          MaterialPageRoute(builder: (_) => const FriendsListPage()),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFBF1D1),
                           foregroundColor: const Color(0xFF000000),
@@ -161,7 +256,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                       const SizedBox(height: 15),
 
-                      /* ---------- LOGOUT ---------- */
+                      /* ----------  LOGOUT  ---------- */
                       ElevatedButton(
                         onPressed: () => _onLogoutPressed(context),
                         style: ElevatedButton.styleFrom(

@@ -1,8 +1,8 @@
 import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:project_flutter/server_url.dart';
 import 'package:project_flutter/services/notification_service.dart';
 import '../models/friend_request.dart';
 
@@ -28,9 +28,8 @@ class FriendService {
       fromUid: uid!,
       fromName: me?['name'] ?? 'Someone',
     );
-    // push
     await http.post(
-      Uri.parse("https://39a1782c9179.ngrok-free.app/notifyFriendRequest"),
+      Uri.parse("$kNgrokBase/notifyFriendRequest"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({
         "toUserId": toUid, // receiver
@@ -84,7 +83,7 @@ class FriendService {
       'createdAt': FieldValue.serverTimestamp(),
     });
     await http.post(
-      Uri.parse("https://39a1782c9179.ngrok-free.app/notifyFriendAccepted"),
+      Uri.parse("$kNgrokBase/notifyFriendAccepted"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({
         "toUserId": req.fromUid,

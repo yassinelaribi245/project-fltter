@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
+import 'package:project_flutter/server_url.dart';
 import 'package:project_flutter/services/post_service.dart';
 import 'package:project_flutter/widgets/comments_sheet.dart';
 import 'package:project_flutter/widgets/presence_dot.dart';
@@ -36,35 +38,27 @@ class _PostDetailPageState extends State<PostDetailPage> {
   Widget _avatar(String? url) => CircleAvatar(
         radius: 18,
         backgroundImage: (url != null && url.isNotEmpty)
-            ? NetworkImage(url)
+            ? NetworkImage(kNgrokBase +url)
             : const AssetImage('assets/other_profile.jpg') as ImageProvider,
       );
 
   Future<void> _openPdf(String url) async {
-    final uri = Uri.parse(url);
-    try {
-      final can = await canLaunchUrl(uri);
-      if (!can) throw 'canLaunchUrl false';
-      final ok = await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-        webViewConfiguration: const WebViewConfiguration(enableJavaScript: true),
+  try {
+    final launched = await launchUrl(
+      Uri.parse(url.trim()),
+      mode: LaunchMode.externalApplication,
+      webViewConfiguration: const WebViewConfiguration(enableJavaScript: true),
+    );
+    if (!launched) throw 'launchUrl false';
+  } catch (_) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PDF link copied to clipboard')),
       );
-      if (!ok) throw 'launchUrl returned false';
-    } catch (_) {
-      final marketIntent = Uri.parse(
-          'https://play.google.com/store/search?q=pdf viewer&c=apps');
-      if (await canLaunchUrl(marketIntent)) {
-        await launchUrl(marketIntent, mode: LaunchMode.externalApplication);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not open PDF')),
-          );
-        }
-      }
+      Clipboard.setData(ClipboardData(text: url));
     }
   }
+}
 
   /* ---------- build ---------- */
   @override
@@ -165,7 +159,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                     : ClipRRect(
                                         borderRadius: BorderRadius.circular(8),
                                         child: Image.network(
-                                          post.images![i],
+                                          kNgrokBase+post.images![i],
                                           fit: BoxFit.cover,
                                           errorBuilder: (_, __, ___) =>
                                               const Icon(Icons.broken_image),

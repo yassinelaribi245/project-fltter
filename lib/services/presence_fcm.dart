@@ -27,21 +27,23 @@ class PresenceFCM {
 
   /* -------- FCM TOKEN -------- */
   Future<void> saveFcmToken() async {
-    final uid = _auth.currentUser?.uid;
-    if (uid == null) return;
+  final uid = _auth.currentUser?.uid;
+  if (uid == null) return;
 
-    await _fcm.requestPermission();
-    final token = await _fcm.getToken();
-    if (token == null) return;
+  await _fcm.requestPermission();
+  final token = await _fcm.getToken();
+  if (token == null) return;          // ← ignore null – token not ready
 
+  await _fs.doc('users/$uid/private/data')
+           .set({'fcmToken': token}, SetOptions(merge: true));
+
+  _fcm.onTokenRefresh.listen((t) async {
+    // ignore: unnecessary_null_comparison
+    if (t == null) return;
     await _fs.doc('users/$uid/private/data')
-        .set({'fcmToken': token}, SetOptions(merge: true));
-
-    _fcm.onTokenRefresh.listen((t) async {
-      await _fs.doc('users/$uid/private/data')
-          .set({'fcmToken': t}, SetOptions(merge: true));
-    });
-  }
+             .set({'fcmToken': t}, SetOptions(merge: true));
+  });
+}
 
   /* -------- LOGOUT: DELETE TOKEN -------- */
   Future<void> deleteFcmToken() async {

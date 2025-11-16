@@ -1,10 +1,14 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:project_flutter/server_url.dart';
 import 'package:project_flutter/services/messaging_service.dart';
 import 'package:project_flutter/widgets/presence_dot.dart';
 import 'package:project_flutter/pages/gallery_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:intl/intl.dart';
 
 class ChatPage extends StatefulWidget {
   final String otherUserId;
@@ -68,27 +72,44 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _openFile(String url) async {
-    if (url.endsWith('.pdf')) {
-      final uri = Uri.parse(url);
-      try {
-        final can = await canLaunchUrl(uri);
-        if (!can) throw 'canLaunchUrl false';
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } catch (_) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not open PDF')),
-          );
-        }
-      }
-    } else {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => GalleryPage(urls: [url], initialIndex: 0),
-        ),
+  final uri = Uri.parse(url.trim());
+  if (url.endsWith('.pdf')) {
+    // Force browser tab – never crash
+    try {
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+        webViewConfiguration: const WebViewConfiguration(enableJavaScript: true),
       );
+      if (!launched) throw 'launchUrl false';
+    } catch (_) {
+      // Last resort: copy to clipboard + snack-bar
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PDF link copied to clipboard')),
+        );
+        Clipboard.setData(ClipboardData(text: url));
+      }
     }
+  } else {
+    // IMAGE – open zoomable gallery
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GalleryPage(urls: [url.trim()], initialIndex: 0),
+      ),
+    );
+  }
+}
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return '';
+    return DateFormat('dd MMM yyyy').format(date);
+  }
+
+  String _formatTime(DateTime? date) {
+    if (date == null) return '';
+    return DateFormat('HH:mm').format(date);
   }
 
   @override
@@ -135,41 +156,71 @@ class _ChatPageState extends State<ChatPage> {
                     final msg = messages[index];
                     final isMe = msg['senderId'] == _messagingService.currentUserId;
                     final isText = msg['isText'] ?? true;
-                    return Align(
-                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: isMe ? const Color(0xFFFBF1D1) : Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: isText
-                            ? Text(msg['content'], style: const TextStyle(fontSize: 16))
-                            : GestureDetector(
-                                onTap: () => _openFile(msg['content']),
-                                child: msg['content'].endsWith('.pdf')
-                                    ? Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.picture_as_pdf,
-                                              color: Colors.red, size: 28),
-                                          const SizedBox(width: 6),
-                                          Text('PDF', style: TextStyle(color: Colors.grey.shade800)),
-                                        ],
-                                      )
-                                    : ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Image.network(
-                                          msg['content'],
-                                          width: 200,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) =>
-                                              const Icon(Icons.broken_image),
-                                        ),
+                    final ts = msg['timestamp'] as Timestamp?;
+                    final dateTime = ts?.toDate();
+                    final time = _formatTime(dateTime);
+                    final date = _formatDate(dateTime);
+
+                    // Day-header logic
+                    final prevTs = index < messages.length - 1
+                        ? messages[index + 1]['timestamp'] as Timestamp?
+                        : null;
+                    final prevDate = prevTs == null
+                        ? ''
+                        : _formatDate(prevTs.toDate());
+                    final showDateHeader = date != prevDate;
+
+                    return Column(
+                      children: [
+                        if (showDateHeader)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Text(date, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                          ),
+                        Align(
+                          alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                          child: Column(
+                            crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: isMe ? const Color(0xFFFBF1D1) : Colors.grey.shade300,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: isText
+                                    ? Text(msg['content'], style: const TextStyle(fontSize: 16))
+                                    : GestureDetector(
+                                        onTap: () => _openFile(msg['content']),
+                                        child: msg['content'].toString().endsWith('.pdf')
+                                            ? Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(Icons.picture_as_pdf,
+                                                      color: Colors.red, size: 28),
+                                                  const SizedBox(width: 6),
+                                                  Text('PDF', style: TextStyle(color: Colors.grey.shade800)),
+                                                ],
+                                              )
+                                            : ClipRRect(
+                                                borderRadius: BorderRadius.circular(8),
+                                                child: Image.network(
+                                                  kNgrokBase+msg['content'].toString().trim(),
+                                                  width: 200,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (_, __, ___) =>
+                                                      const Icon(Icons.broken_image),
+                                                ),
+                                              ),
                                       ),
                               ),
-                      ),
+                              const SizedBox(height: 2),
+                              Text(time, style: const TextStyle(fontSize: 10, color: Colors.white70)),
+                            ],
+                          ),
+                        ),
+                      ],
                     );
                   },
                 );

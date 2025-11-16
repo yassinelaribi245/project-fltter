@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:project_flutter/server_url.dart';
 import 'package:project_flutter/services/friend_service.dart';
 import 'package:project_flutter/models/friend_request.dart';
 
@@ -40,7 +41,7 @@ class FriendRequestsPage extends StatelessWidget {
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundImage: (photo != null)
-                          ? NetworkImage(photo)
+                          ? NetworkImage(kNgrokBase +photo)
                           : const AssetImage('assets/other_profile.jpg'),
                     ),
                     title: Text(name,

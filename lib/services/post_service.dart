@@ -1,8 +1,8 @@
 import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:project_flutter/server_url.dart';
 import 'package:project_flutter/services/notification_service.dart';
 import 'package:project_flutter/models/notification.dart' show NotifType;
 
@@ -13,22 +13,24 @@ class PostService {
   String? get uid => _auth.currentUser?.uid;
 
   /* -------- CREATE TEXT POST (unconfirmed) -------- */
-  Future<void> createTextPost({
-    required String content,
-    required List<String> topics,
-  }) async {
-    if (uid == null) throw Exception('Not signed in');
-    final doc = _fs.collection('posts').doc();
-    await doc.set({
-      'ownerUid': uid,
-      'content': content.trim(),
-      'topics': topics,
-      'likeCount': 0,
-      'commentCount': 0,
-      'confirmed': false, // admin must set true
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-  }
+Future<void> createTextPost({
+  required String content,
+  required List<String> topics,
+}) async {
+  if (uid == null) throw Exception('Not signed in');
+  if (topics.isEmpty) throw Exception('At least one topic is required');
+
+  final doc = _fs.collection('posts').doc();
+  await doc.set({
+    'ownerUid': uid,
+    'content': content.trim(),
+    'topics': topics,
+    'likeCount': 0,
+    'commentCount': 0,
+    'confirmed': false,
+    'createdAt': FieldValue.serverTimestamp(),
+  });
+}
 
   /* -------- STREAM CONFIRMED POSTS ONLY -------- */
   Stream<List<Post>> streamConfirmedPosts() {
@@ -48,48 +50,74 @@ class PostService {
 
 /* -------- TOGGLE LIKE ON POST -------- */
 Future<void> likePost(String postId) async {
+  final uid = this.uid;
   if (uid == null) return;
+
   final likeRef = _fs.doc('posts/$postId/likes/$uid');
   final postRef = _fs.doc('posts/$postId');
 
   final likeSnap = await likeRef.get();
-  if (likeSnap.exists) {
-    // UNLIKE
-    await likeRef.delete();
-    await postRef.update({'likeCount': FieldValue.increment(-1)});
-  } else {
-    // LIKE
-    await likeRef.set({'likedAt': FieldValue.serverTimestamp()});
-    await postRef.update({'likeCount': FieldValue.increment(1)});
+  final batch = _fs.batch();
 
-    /* =====  SEND NOTIFICATION  ===== */
-    final postDoc = await postRef.get();
-    final postOwner = postDoc.data()?['ownerUid'];
-    if (postOwner != null && postOwner != uid) {
+  /* ---------- read post topics ONCE (used in both branches) ---------- */
+  final postDoc = await postRef.get();
+  final topics = List<String>.from(postDoc.data()?['topics'] ?? []);
+  final ownerUid = postDoc.data()?['ownerUid'];
+
+  if (likeSnap.exists) {
+    /* ---------- UN-LIKE ---------- */
+    batch.delete(likeRef);
+    batch.update(postRef, {'likeCount': FieldValue.increment(-1)});
+
+    /* 1️⃣  decrement liker’s own taste */
+    final myTasteRef = _fs.doc('users/$uid/public/taste');
+    for (final t in topics) {
+      final safeField = t.replaceAll(RegExp(r'[/\.]'), '_');
+      /* delete if would become ≤ 0, else decrement */
+      batch.update(myTasteRef, {safeField: FieldValue.increment(-1)});
+      /* NOTE: Firestore does not allow “conditional delete” in batch,
+         so we rely on a tiny Cloud-Function OR client-side cleanup
+         if you want strict 0-removal.  For now we simply leave 0
+         and ignore it when reading. */
+    }
+  } else {
+    /* ---------- LIKE ---------- */
+    batch.set(likeRef, {'likedAt': FieldValue.serverTimestamp()});
+    batch.update(postRef, {'likeCount': FieldValue.increment(1)});
+
+    /* 2️⃣  increment liker’s own taste */
+    final myTasteRef = _fs.doc('users/$uid/public/taste');
+    for (final t in topics) {
+      final safeField = t.replaceAll(RegExp(r'[/\.]'), '_');
+      batch.set(myTasteRef, {safeField: FieldValue.increment(1)}, SetOptions(merge: true));
+    }
+
+    /* 3️⃣  send notification (unchanged) */
+    if (ownerUid != null && ownerUid != uid) {
       final meSnap = await _fs.doc('users/$uid/public/data').get();
       final meName = meSnap.data()?['name'] ?? 'Someone';
 
-      // 1. Firestore notification
       await NotificationService().add(
-        toUid: postOwner,
-        fromUid: uid!,
+        toUid: ownerUid,
+        fromUid: uid,
         fromName: meName,
         type: NotifType.like,
         postId: postId,
       );
 
-      // 2. Push notification
       await http.post(
-        Uri.parse("https://39a1782c9179.ngrok-free.app/notifyLike"),
+        Uri.parse("$kNgrokBase/notifyLike "),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
-          "toUserId": postOwner,
+          "toUserId": ownerUid,
           "fromName": meName,
           "postId": postId,
         }),
       );
     }
   }
+
+  await batch.commit();
 }
 
   Stream<bool> isLiked(String postId) {
@@ -154,6 +182,7 @@ Future<Map<String, dynamic>?> getUserData(String uid) async {
         .snapshots()
         .map((s) => s.exists);
   }
+/* -------- CREATE IMAGE POST (unconfirmed) -------- */
 Future<void> createImagePost({
   required String content,
   required List<String> topics,
@@ -161,6 +190,8 @@ Future<void> createImagePost({
 }) async {
   final uid = _auth.currentUser?.uid;
   if (uid == null) throw Exception('Not signed in');
+  if (topics.isEmpty) throw Exception('At least one topic is required');
+
   final doc = _fs.collection('posts').doc();
   await doc.set({
     'ownerUid': uid,

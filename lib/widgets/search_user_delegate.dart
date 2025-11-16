@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:project_flutter/server_url.dart';
 import 'package:project_flutter/services/search_service.dart';
 import 'package:project_flutter/pages/other_profile.dart';
 
@@ -45,7 +46,7 @@ class SearchUserDelegate extends SearchDelegate {
             return ListTile(
               leading: CircleAvatar(
                 backgroundImage: user['profilePicture'] != null
-                    ? NetworkImage(user['profilePicture'])
+                    ? NetworkImage(kNgrokBase +user['profilePicture'])
                     : const AssetImage('assets/other_profile.jpg'),
               ),
               title: Text(user['name']),

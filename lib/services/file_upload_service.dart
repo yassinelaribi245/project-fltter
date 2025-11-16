@@ -2,27 +2,33 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
+import 'package:project_flutter/server_url.dart'; // ← single base URL
 
 class FileUploadService {
-  static const String _uploadUrl = "https://39a1782c9179.ngrok-free.app/uploadFile";
-
+  /* ----------  UPLOAD SINGLE FILE  ---------- */
+  /// returns **path only**  e.g.  /images/abc.jpg
   static Future<String?> uploadFile({
-    required String folder,
+    required String folder, // 'images' | 'pdfs'
     required File file,
   }) async {
     try {
-      final request = http.MultipartRequest('POST', Uri.parse(_uploadUrl));
+      final url = Uri.parse('$kNgrokBase/uploadFile');
+      final request = http.MultipartRequest('POST', url);
       request.fields['folder'] = folder;
       request.files.add(await http.MultipartFile.fromPath('file', file.path));
 
       final response = await request.send();
       if (response.statusCode == 200) {
-        return await response.stream.bytesToString();
+        // server returns **path only**  e.g.  /images/abc.jpg
+        final path = await response.stream.bytesToString();
+        return path.trim();
       }
     } catch (_) {}
     return null;
   }
 
+  /* ----------  PICK & UPLOAD MULTIPLE IMAGES  ---------- */
+  /// returns **List<path>**  e.g.  ['/images/a.jpg', '/images/b.jpg']
   static Future<List<String>?> pickAndUploadImages() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
@@ -30,12 +36,16 @@ class FileUploadService {
     );
     if (result == null) return null;
 
-    final urls = <String>[];
-    for (final file in result.files) {
-      if (file.path == null) continue;
-      final url = await uploadFile(folder: 'images', file: File(file.path!));
-      if (url != null) urls.add(url);
+    final paths = <String>[];
+    for (final platformFile in result.files) {
+      final path = platformFile.path;
+      if (path == null) continue;
+      final uploaded = await uploadFile(
+        folder: 'images',
+        file: File(path),
+      );
+      if (uploaded != null) paths.add(uploaded);
     }
-    return urls;
+    return paths.isEmpty ? null : paths;
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:project_flutter/server_url.dart';
 import '../services/messaging_service.dart';
 import 'chat_page.dart';
 import '../widgets/presence_dot.dart';
@@ -62,7 +63,7 @@ class ConversationsPage extends StatelessWidget {
                       children: [
                         CircleAvatar(
                           backgroundImage: userData?['profilePicture'] != null
-                              ? NetworkImage(userData!['profilePicture'])
+                              ? NetworkImage(kNgrokBase+userData!['profilePicture'])
                               : const AssetImage('assets/other_profile.jpg'),
                         ),
                         PresenceDot(otherUserId), // ← dot only

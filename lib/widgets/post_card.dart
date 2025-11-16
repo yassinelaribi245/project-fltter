@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:project_flutter/pages/post_detail_page.dart';
 import 'package:project_flutter/services/post_service.dart';
 import 'package:project_flutter/widgets/comments_sheet.dart';
+import 'package:project_flutter/server_url.dart'; // ← base url
 
 class PostCard extends StatelessWidget {
   final Post post;
@@ -34,26 +35,23 @@ class PostCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  /* ----- author ----- */
                   Row(
                     children: [
                       CircleAvatar(
                         radius: 14,
-                        backgroundImage:
-                            ownerSnap.data?['profilePicture'] != null
-                                ? NetworkImage(ownerSnap.data!['profilePicture'])
-                                : const AssetImage('assets/other_profile.jpg'),
+                        backgroundImage: ownerSnap.data?['profilePicture'] != null
+                            ? NetworkImage(kNgrokBase + ownerSnap.data!['profilePicture'])
+                            : const AssetImage('assets/other_profile.jpg'),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        ownerName,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                      Text(ownerName,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
                       const Spacer(),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Text(post.content, style: const TextStyle(fontSize: 16)),
+                  Text(post.content,
+                      style: const TextStyle(fontSize: 16)),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -63,14 +61,13 @@ class PostCard extends StatelessWidget {
                           final liked = snap.data ?? false;
                           return IconButton(
                             icon: Icon(
-                              liked ? Icons.favorite : Icons.favorite_border,
-                              color: liked ? Colors.red : null,
-                            ),
+                                liked ? Icons.favorite : Icons.favorite_border,
+                                color: liked ? Colors.red : null),
                             onPressed: () => service.likePost(post.id),
                           );
                         },
                       ),
-                      Text("${post.likeCount}"),
+                      Text('${post.likeCount}'),
                       const Spacer(),
                       IconButton(
                         icon: const Icon(Icons.comment),
@@ -79,7 +76,7 @@ class PostCard extends StatelessWidget {
                           builder: (_) => CommentsSheet(post: post),
                         ),
                       ),
-                      Text("${post.commentCount}"),
+                      Text('${post.commentCount}'),
                     ],
                   ),
                 ],
@@ -106,10 +103,8 @@ class ImagePostCard extends StatelessWidget {
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => PostDetailPage(
-              postId: post.id,
-              postOwnerUid: post.ownerUid,
-            ),
+            builder: (_) =>
+                PostDetailPage(postId: post.id, postOwnerUid: post.ownerUid),
           ),
         ),
         child: Padding(
@@ -128,18 +123,20 @@ class ImagePostCard extends StatelessWidget {
                         radius: 14,
                         backgroundImage: owner?['profilePicture'] != null &&
                                 owner!['profilePicture'].isNotEmpty
-                            ? NetworkImage(owner['profilePicture'])
+                            ? NetworkImage(kNgrokBase + owner['profilePicture'])
                             : const AssetImage('assets/other_profile.jpg'),
                       ),
                       const SizedBox(width: 8),
-                      Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text(name,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
                       const Spacer(),
                     ],
                   );
                 },
               ),
               const SizedBox(height: 8),
-              Text(post.content, style: const TextStyle(fontSize: 16)),
+              Text(post.content,
+                  style: const TextStyle(fontSize: 16)),
               const SizedBox(height: 8),
               if (post.images != null && post.images!.isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -148,19 +145,29 @@ class ImagePostCard extends StatelessWidget {
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
                         mainAxisSpacing: 4,
                         crossAxisSpacing: 4,
                         childAspectRatio: 1,
                       ),
-                      itemCount: post.images!.length > 4 ? 4 : post.images!.length,
+                      itemCount:
+                          post.images!.length > 4 ? 4 : post.images!.length,
                       itemBuilder: (_, i) => ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: Image.network(
-                          post.images![i],
+                          kNgrokBase + post.images![i], // ← base + path
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image),
+                          width: double.infinity,
+                          height: 200,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: double.infinity,
+                            height: 200,
+                            color: Colors.grey[300],
+                            child: const Icon(Icons.broken_image,
+                                color: Colors.grey),
+                          ),
                         ),
                       ),
                     ),
@@ -194,14 +201,13 @@ class ImagePostCard extends StatelessWidget {
                       final liked = snap.data ?? false;
                       return IconButton(
                         icon: Icon(
-                          liked ? Icons.favorite : Icons.favorite_border,
-                          color: liked ? Colors.red : null,
-                        ),
+                            liked ? Icons.favorite : Icons.favorite_border,
+                            color: liked ? Colors.red : null),
                         onPressed: () => service.likePost(post.id),
                       );
                     },
                   ),
-                  Text("${post.likeCount}"),
+                  Text('${post.likeCount}'),
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.comment),
@@ -210,7 +216,7 @@ class ImagePostCard extends StatelessWidget {
                       builder: (_) => CommentsSheet(post: post),
                     ),
                   ),
-                  Text("${post.commentCount}"),
+                  Text('${post.commentCount}'),
                 ],
               ),
             ],

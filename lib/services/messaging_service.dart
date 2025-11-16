@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:project_flutter/server_url.dart';
 import 'dart:convert';
-
 import 'package:project_flutter/services/file_upload_service.dart';
 
 class MessagingService {
@@ -59,81 +59,76 @@ Future<void> sendFileMessage(String conversationId, File file) async {
     'lastMessageTime': FieldValue.serverTimestamp(),
   });
 
-  /* 3. push notification */
-  final convSnap = await _firestore.collection('conversations').doc(conversationId).get();
-  final participants = List<String>.from(convSnap.data()?['participants'] ?? []);
-  final recipientUid = participants.firstWhere((p) => p != currentUserId, orElse: () => '');
-  if (recipientUid.isEmpty) return;
+  /* 3. silent data-only push (generic body) */
+  try {
+    final convSnap = await _firestore.collection('conversations').doc(conversationId).get();
+    final participants = List<String>.from(convSnap.data()?['participants'] ?? []);
+    final recipientUid = participants.firstWhere((p) => p != currentUserId, orElse: () => '');
+    if (recipientUid.isEmpty) return;
 
-  final me = await _firestore.doc('users/$currentUserId/public/data').get();
-  final senderName = me.data()?['name'] ?? 'Someone';
+    final me = await _firestore.doc('users/$currentUserId/public/data').get();
+    final senderName = me.data()?['name'] ?? 'Someone';
+    final bodyText = file.path.endsWith('.pdf') ? 'Sent a PDF' : 'Sent an image';
 
-  await http.post(
-    Uri.parse("https://39a1782c9179.ngrok-free.app/notifyMessage"),
-    headers: {"Content-Type": "application/json"},
-    body: jsonEncode({
-      "toUserId": recipientUid,
-      "title": senderName,
-      "body": "Sent a file",
-      "conversationId": conversationId,
-    }),
-  );
+    await http.post(
+      Uri.parse("$kNgrokBase/notifyMessage"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        "toUserId": recipientUid,
+        "title": senderName,
+        "body": bodyText,
+        "conversationId": conversationId,
+      }),
+    );
+  } catch (_) {
+    // silently ignore – message is already in Firestore
+  }
 }
   Future<void> sendMessage(String conversationId, String content) async {
-    final currentUserId = this.currentUserId;
-    if (currentUserId == null) throw Exception('User not logged in');
+  final currentUserId = this.currentUserId;
+  if (currentUserId == null) throw Exception('User not logged in');
 
-    /* 1. write message to Firestore (original) */
-    final messagesRef = _firestore
-        .collection('conversations')
-        .doc(conversationId)
-        .collection('messages');
+  /* 1. write message to Firestore */
+  await _firestore
+      .collection('conversations')
+      .doc(conversationId)
+      .collection('messages')
+      .add({
+    'senderId': currentUserId,
+    'isText': true,
+    'content': content.trim(),
+    'timestamp': FieldValue.serverTimestamp(),
+  });
 
-    await messagesRef.add({
-      'senderId': currentUserId,
-      'content': content.trim(),
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+  /* 2. update lastMessageTime */
+  await _firestore.collection('conversations').doc(conversationId).update({
+    'lastMessageTime': FieldValue.serverTimestamp(),
+  });
 
-    /* 2. update lastMessageTime (original) */
-    await _firestore.collection('conversations').doc(conversationId).update({
-      'lastMessageTime': FieldValue.serverTimestamp(),
-    });
+  /* 3. silent data-only push */
+  try {
+    final convSnap = await _firestore.collection('conversations').doc(conversationId).get();
+    final participants = List<String>.from(convSnap.data()?['participants'] ?? []);
+    final recipientUid = participants.firstWhere((p) => p != currentUserId, orElse: () => '');
+    if (recipientUid.isEmpty) return;
 
-    /* 3. send push via Node server */
-    try {
-      // 3a. find recipient uid
-      final convSnap = await _firestore
-          .collection('conversations')
-          .doc(conversationId)
-          .get();
-      final participants =
-          (convSnap.data()?['participants'] as List<dynamic>) ?? [];
-      final recipientUid = participants.firstWhere(
-        (p) => p != currentUserId,
-        orElse: () => '',
-      );
-      if (recipientUid.isEmpty) return;
+    final me = await _firestore.doc('users/$currentUserId/public/data').get();
+    final senderName = me.data()?['name'] ?? 'Someone';
 
-      // 3b. get sender name
-      final me = await _firestore.doc('users/$currentUserId/public/data').get();
-      final senderName = me.data()?['name'] ?? 'Someone';
-
-      // 3c. call Node endpoint
-      await http.post(
-        Uri.parse("https://39a1782c9179.ngrok-free.app/notifyMessage"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "toUserId": recipientUid,
-          "title": senderName,
-          "body": content.trim(),
-          "conversationId": conversationId,
-        }),
-      );
-    } catch (_) {
-      // silently ignore – message is already in Firestore
-    }
+    await http.post(
+      Uri.parse("$kNgrokBase/notifyMessage"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        "toUserId": recipientUid,
+        "title": senderName,
+        "body": content.trim(),
+        "conversationId": conversationId,
+      }),
+    );
+  } catch (_) {
+    // silently ignore – message is already in Firestore
   }
+}
 
   /* ---------- NEW: return BOTH text & file messages ---------- */
 Stream<List<Map<String, dynamic>>> getMessages(String conversationId) {

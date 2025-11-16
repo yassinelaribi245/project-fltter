@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:project_flutter/models/friend_request.dart';
+import 'package:project_flutter/server_url.dart';
 import 'package:project_flutter/services/friend_service.dart';
 import 'package:project_flutter/services/notification_service.dart';
 import 'package:project_flutter/models/notification.dart';
@@ -8,7 +9,6 @@ import 'package:project_flutter/pages/other_profile.dart';
 import 'package:project_flutter/widgets/comments_sheet.dart';
 import 'package:project_flutter/pages/chat_page.dart';
 import 'package:project_flutter/services/post_service.dart';
-// NEW IMPORT
 import 'package:project_flutter/pages/post_detail_page.dart';
 
 class NotificationsPage extends StatelessWidget {
@@ -46,11 +46,7 @@ class NotificationsPage extends StatelessWidget {
             itemBuilder: (_, i) {
               final n = list[i];
               return ListTile(
-                leading: CircleAvatar(
-                  backgroundImage: (n.fromPhoto != null)
-                      ? NetworkImage(n.fromPhoto!)
-                      : const AssetImage('assets/other_profile.jpg'),
-                ),
+                leading: _liveAvatar(n.fromUid, n.fromPhoto), // <-- NEW
                 title: Text(
                   n.title,
                   style: TextStyle(
@@ -73,18 +69,49 @@ class NotificationsPage extends StatelessWidget {
   }
 
   /* ---------------------------------------------------- */
+  /*  live avatar – streams current public doc  */
+  /* ---------------------------------------------------- */
+  Widget _liveAvatar(String fromUid, String? cachedUrl) {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .doc('users/$fromUid/public/data')
+          .snapshots(),
+      builder: (_, snap) {
+        if (!snap.hasData || !snap.data!.exists) {
+          // fall back to cached or default
+          return CircleAvatar(
+            backgroundImage: (cachedUrl != null && cachedUrl.isNotEmpty)
+                ? NetworkImage(kNgrokBase+cachedUrl)
+                : const AssetImage('assets/other_profile.jpg'),
+          );
+        }
+        final data = snap.data!.data() as Map<String, dynamic>;
+        final liveUrl = data['profilePicture'];
+        return CircleAvatar(
+          backgroundImage: (liveUrl != null && liveUrl.isNotEmpty)
+              ? NetworkImage(kNgrokBase+liveUrl)
+              : (cachedUrl != null && cachedUrl.isNotEmpty
+                  ? NetworkImage(kNgrokBase+cachedUrl)
+                  : const AssetImage('assets/other_profile.jpg')),
+        );
+      },
+    );
+  }
+
+  /* ---------------------------------------------------- */
+  /*  existing tap handler – unchanged  */
+  /* ---------------------------------------------------- */
   void _handleTap(BuildContext context, AppNotification n) {
     switch (n.type) {
       case NotifType.like:
       case NotifType.comment:
         if (n.postId != null) {
-          // NEW: open post detail instead of dummy bottom-sheet
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => PostDetailPage(
                 postId: n.postId!,
-                postOwnerUid: n.toUid, // we fetch real owner inside
+                postOwnerUid: n.toUid,
               ),
             ),
           );
@@ -115,11 +142,7 @@ class NotificationsPage extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: (n.fromPhoto != null)
-                        ? NetworkImage(n.fromPhoto!)
-                        : const AssetImage('assets/other_profile.jpg'),
-                  ),
+                  leading: _liveAvatar(n.fromUid, n.fromPhoto),
                   title: Text(n.fromName),
                   subtitle: const Text('sent you a friend request'),
                 ),
