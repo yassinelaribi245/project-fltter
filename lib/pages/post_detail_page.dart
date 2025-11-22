@@ -7,7 +7,7 @@ import 'package:project_flutter/services/post_service.dart';
 import 'package:project_flutter/widgets/comments_sheet.dart';
 import 'package:project_flutter/widgets/presence_dot.dart';
 import 'package:project_flutter/pages/gallery_page.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:project_flutter/widgets/open_pdf.dart' as pdfOpener; // 1. import
 
 class PostDetailPage extends StatefulWidget {
   final String postId;
@@ -34,33 +34,32 @@ class _PostDetailPageState extends State<PostDetailPage> {
     _ownerFuture = _svc.getUserData(widget.postOwnerUid);
   }
 
-  /* ---------- helpers ---------- */
+  /*  ----------  NEW central PDF opener with fallback  ----------  */
+  Future<void> _openPdf(String path) async {
+    final ok = await pdfOpener.openPdf(path);
+    if (!ok && mounted) {
+      final fullUrl = kNgrokBase + path.trim();
+      Clipboard.setData(ClipboardData(text: fullUrl));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PDF link copied to clipboard')),
+      );
+    }
+  }
+
   Widget _avatar(String? url) => CircleAvatar(
         radius: 18,
         backgroundImage: (url != null && url.isNotEmpty)
-            ? NetworkImage(kNgrokBase +url)
+            ? NetworkImage(kNgrokBase + url)
             : const AssetImage('assets/other_profile.jpg') as ImageProvider,
       );
 
-  Future<void> _openPdf(String url) async {
-  try {
-    final launched = await launchUrl(
-      Uri.parse(url.trim()),
-      mode: LaunchMode.externalApplication,
-      webViewConfiguration: const WebViewConfiguration(enableJavaScript: true),
+  void _showComments(Post post) {
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => CommentsSheet(post: post),
     );
-    if (!launched) throw 'launchUrl false';
-  } catch (_) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('PDF link copied to clipboard')),
-      );
-      Clipboard.setData(ClipboardData(text: url));
-    }
   }
-}
 
-  /* ---------- build ---------- */
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -122,7 +121,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             itemCount: post.images!.length,
                             itemBuilder: (_, i) => GestureDetector(
                               onTap: () => post.images![i].endsWith('.pdf')
-                                  ? _openPdf(post.images![i])
+                                  ? _openPdf(post.images![i]) // 2. use helper
                                   : Navigator.push(
                                       context,
                                       MaterialPageRoute(
@@ -159,7 +158,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                                     : ClipRRect(
                                         borderRadius: BorderRadius.circular(8),
                                         child: Image.network(
-                                          kNgrokBase+post.images![i],
+                                          kNgrokBase + post.images![i],
                                           fit: BoxFit.cover,
                                           errorBuilder: (_, __, ___) =>
                                               const Icon(Icons.broken_image),
@@ -172,6 +171,29 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         ],
                       ),
 
+                    /* ----- like / comment bar ----- */
+                    Row(
+                      children: [
+                        StreamBuilder<bool>(
+                          stream: _svc.isLiked(post.id),
+                          builder: (_, snap) {
+                            final liked = snap.data ?? false;
+                            return IconButton(
+                              icon: Icon(liked ? Icons.favorite : Icons.favorite_border,
+                                  color: liked ? Colors.red : null),
+                              onPressed: () => _svc.likePost(post.id),
+                            );
+                          },
+                        ),
+                        Text('${post.likeCount}'),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.comment),
+                          onPressed: () => _showComments(post),
+                        ),
+                        Text('${post.commentCount}'),
+                      ],
+                    ),
                     const Divider(color: Colors.white24),
 
                     /* ----- real-time comments ----- */
@@ -202,7 +224,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
     );
   }
 
-  /* ----- comment list tile ----- */
   Widget _commentTile(Comment c) {
     return FutureBuilder<Map<String, dynamic>?>(
       future: _svc.getUserData(c.ownerUid),
@@ -215,14 +236,6 @@ class _PostDetailPageState extends State<PostDetailPage> {
           subtitle: Text(c.content, style: const TextStyle(color: Colors.white70)),
         );
       },
-    );
-  }
-
-  /* ----- open bottom-sheet comments ----- */
-  void _showComments(Post post) {
-    showModalBottomSheet(
-      context: context,
-      builder: (_) => CommentsSheet(post: post),
     );
   }
 }

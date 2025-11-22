@@ -1,20 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:project_flutter/services/post_service.dart';
-import 'package:project_flutter/server_url.dart'; // base URL
+import 'package:project_flutter/server_url.dart';
 import 'package:project_flutter/pages/gallery_page.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:project_flutter/widgets/open_pdf.dart' as pdfOpener;
+import 'package:project_flutter/models/quiz.dart';
+import 'package:project_flutter/pages/quiz_page.dart';
 
 class PostCardAdmin extends StatelessWidget {
   final Post post;
   const PostCardAdmin({super.key, required this.post});
 
-  /* quick helper for PDF launch */
-  Future<void> _openPdf(String url) async {
-    final uri = Uri.parse(kNgrokBase + url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
+  Future<void> _openPdf(String path) async => pdfOpener.openPdf( path);
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +62,6 @@ class PostCardAdmin extends StatelessWidget {
                 ),
               ],
             ),
-            /*  single, clickable image/pdf strip  */
             if (post.images != null && post.images!.isNotEmpty) ...[
               const SizedBox(height: 12),
               SizedBox(
@@ -123,6 +118,42 @@ class PostCardAdmin extends StatelessWidget {
                               ),
                             ),
                     ),
+                  ),
+                ),
+              ),
+            ],
+
+            /*  quiz badge  –  ADMIN PREVIEW MODE  */
+            if (post.quiz != null) ...[
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => QuizPage(
+                      postId: post.id,
+                      quiz: Quiz.fromJson(post.quiz!),
+                      readOnly: false, // allow answering
+                      showAnswers: true, // show correct answers
+                      adminPreview: true, // NEW FLAG
+                    ),
+                  ),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFBF1D1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.quiz, size: 18, color: Color(0xFF1E405B)),
+                      SizedBox(width: 6),
+                      Text('Quiz',
+                          style: TextStyle(
+                              color: Color(0xFF1E405B), fontWeight: FontWeight.bold)),
+                    ],
                   ),
                 ),
               ),

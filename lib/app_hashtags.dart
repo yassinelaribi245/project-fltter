@@ -12,5 +12,5 @@ const List<String> kAppHashtags = [
   'psychology','sociology','economics','politics','law','media','communication',
 
   // Life & Career Skills
-  'studySkills','criticalThinking','coding','entrepreneurship','leadership','finance','careers','softSkills'
+  'studySkills','criticalThinking','coding','entrepreneurship','leadership','finance','careers','softSkills','quiz'
 ];

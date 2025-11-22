@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:project_flutter/pages/post_detail_page.dart';
 import 'package:project_flutter/services/post_service.dart';
 import 'package:project_flutter/widgets/comments_sheet.dart';
-import 'package:project_flutter/server_url.dart'; // ← base url
+import 'package:project_flutter/server_url.dart';
+import 'package:project_flutter/models/quiz.dart';
+import 'package:project_flutter/pages/quiz_page.dart';
 
 class PostCard extends StatelessWidget {
   final Post post;
@@ -11,8 +13,6 @@ class PostCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final service = PostService();
-    final uid = service.uid;
-
     return FutureBuilder<Map<String, dynamic>?>(
       future: service.getUserData(post.ownerUid),
       builder: (context, ownerSnap) {
@@ -21,15 +21,31 @@ class PostCard extends StatelessWidget {
           color: const Color(0xFFEDEDEB),
           margin: const EdgeInsets.only(bottom: 12),
           child: InkWell(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PostDetailPage(
-                  postId: post.id,
-                  postOwnerUid: post.ownerUid,
+            onTap: () {
+              if (post.quiz != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => QuizPage(
+                      postId: post.id,
+                      quiz: Quiz.fromJson(post.quiz!),
+                      readOnly: false,
+                      showAnswers: false,
+                    ),
+                  ),
+                );
+                return;
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PostDetailPage(
+                    postId: post.id,
+                    postOwnerUid: post.ownerUid,
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -53,6 +69,46 @@ class PostCard extends StatelessWidget {
                   Text(post.content,
                       style: const TextStyle(fontSize: 16)),
                   const SizedBox(height: 8),
+
+                  /*  quiz badge  */
+                  if (post.quiz != null) ...[
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => QuizPage(
+                            postId: post.id,
+                            quiz: Quiz.fromJson(post.quiz!),
+                            readOnly: false,
+                            showAnswers: false,
+                          ),
+                        ),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFBF1D1),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.quiz,
+                                size: 18, color: Color(0xFF1E405B)),
+                            SizedBox(width: 6),
+                            Text('Quiz',
+                                style: TextStyle(
+                                    color: Color(0xFF1E405B),
+                                    fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  /*  LIKE / COMMENT BAR  */
                   Row(
                     children: [
                       StreamBuilder<bool>(
@@ -100,13 +156,29 @@ class ImagePostCard extends StatelessWidget {
       color: const Color(0xFFEDEDEB),
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                PostDetailPage(postId: post.id, postOwnerUid: post.ownerUid),
-          ),
-        ),
+        onTap: () {
+          if (post.quiz != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => QuizPage(
+                  postId: post.id,
+                  quiz: Quiz.fromJson(post.quiz!),
+                  readOnly: false,
+                  showAnswers: false,
+                ),
+              ),
+            );
+            return;
+          }
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  PostDetailPage(postId: post.id, postOwnerUid: post.ownerUid),
+            ),
+          );
+        },
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -135,11 +207,10 @@ class ImagePostCard extends StatelessWidget {
                 },
               ),
               const SizedBox(height: 8),
-              Text(post.content,
-                  style: const TextStyle(fontSize: 16)),
+              Text(post.content, style: const TextStyle(fontSize: 16)),
               const SizedBox(height: 8),
+
               if (post.images != null && post.images!.isNotEmpty) ...[
-                const SizedBox(height: 8),
                 Stack(
                   children: [
                     GridView.builder(
@@ -148,7 +219,7 @@ class ImagePostCard extends StatelessWidget {
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
-                        mainAxisSpacing: 4,
+                        mainAxisSpacing: 0,
                         crossAxisSpacing: 4,
                         childAspectRatio: 1,
                       ),
@@ -157,13 +228,11 @@ class ImagePostCard extends StatelessWidget {
                       itemBuilder: (_, i) => ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: Image.network(
-                          kNgrokBase + post.images![i], // ← base + path
+                          kNgrokBase + post.images![i],
                           fit: BoxFit.cover,
                           width: double.infinity,
-                          height: 200,
                           errorBuilder: (_, __, ___) => Container(
                             width: double.infinity,
-                            height: 200,
                             color: Colors.grey[300],
                             child: const Icon(Icons.broken_image,
                                 color: Colors.grey),
@@ -192,7 +261,43 @@ class ImagePostCard extends StatelessWidget {
                   ],
                 ),
               ],
-              const SizedBox(height: 8),
+
+              if (post.quiz != null) ...[
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => QuizPage(
+                        postId: post.id,
+                        quiz: Quiz.fromJson(post.quiz!),
+                        readOnly: false,
+                        showAnswers: false,
+                      ),
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFBF1D1),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.quiz, size: 18, color: Color(0xFF1E405B)),
+                        SizedBox(width: 6),
+                        Text('Quiz',
+                            style: TextStyle(
+                                color: Color(0xFF1E405B),
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+
               Row(
                 children: [
                   StreamBuilder<bool>(

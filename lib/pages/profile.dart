@@ -13,6 +13,7 @@ import 'package:project_flutter/pages/admin_posts_page.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:project_flutter/pages/friends_list_page.dart';
 import 'package:project_flutter/services/file_upload_service.dart';
+import 'package:project_flutter/pages/my_posts_page.dart'; // <-- NEW
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -157,7 +158,7 @@ class _ProfilePageState extends State<ProfilePage>
                                   ? null
                                   : (userData?['profilePicture'] != null &&
                                           userData!['profilePicture'].isNotEmpty
-                                      ? NetworkImage(kNgrokBase +userData!['profilePicture'])
+                                      ? NetworkImage(kNgrokBase + userData!['profilePicture'])
                                       : const AssetImage('assets/profile.jpg')),
                               child: _uploadingAvatar
                                   ? const CircularProgressIndicator(strokeWidth: 2)
@@ -253,6 +254,24 @@ class _ProfilePageState extends State<ProfilePage>
                           minimumSize: const Size(double.infinity, 50),
                         ),
                         child: const Text('Friends'),
+                      ),
+                      const SizedBox(height: 15),
+
+                      /* ----------  YOUR POSTS  ---------- */
+                      ElevatedButton(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const MyPostsPage()),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFBF1D1),
+                          foregroundColor: const Color(0xFF000000),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          minimumSize: const Size(double.infinity, 50),
+                        ),
+                        child: const Text('Your posts'),
                       ),
                       const SizedBox(height: 15),
 

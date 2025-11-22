@@ -1,1 +1,1 @@
-const String kNgrokBase = 'https://e8912b82b059.ngrok-free.app';
+const String kNgrokBase = 'https://million-looked-away-duke.trycloudflare.com';

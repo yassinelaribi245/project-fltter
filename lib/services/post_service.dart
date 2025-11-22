@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:project_flutter/models/quiz.dart';
 import 'package:project_flutter/server_url.dart';
 import 'package:project_flutter/services/notification_service.dart';
 import 'package:project_flutter/models/notification.dart' show NotifType;
@@ -13,6 +14,27 @@ class PostService {
   String? get uid => _auth.currentUser?.uid;
 
   /* -------- CREATE TEXT POST (unconfirmed) -------- */
+Future<void> createQuizPost({
+  required String content,
+  required List<String> topics,
+  required Quiz quiz,
+}) async {
+  final uid = _auth.currentUser?.uid;
+  if (uid == null) throw Exception('Not signed in');
+  if (topics.isEmpty) throw Exception('At least one topic is required');
+
+  final doc = _fs.collection('posts').doc();
+  await doc.set({
+    'ownerUid': uid,
+    'content': content.trim(),
+    'topics': topics,
+    'likeCount': 0,
+    'commentCount': 0,
+    'confirmed': false,
+    'createdAt': FieldValue.serverTimestamp(),
+    'quiz': quiz.toJson(),
+  });
+}
 Future<void> createTextPost({
   required String content,
   required List<String> topics,
@@ -240,6 +262,7 @@ class Post {
   final bool confirmed;
   final DateTime? createdAt;
   final List<String>? images;
+  final Map<String, dynamic>? quiz;
 
   Post({
     required this.id,
@@ -251,6 +274,7 @@ class Post {
     required this.confirmed,
     this.createdAt,
     this.images,
+    this.quiz,
   });
 
   factory Post.fromDoc(DocumentSnapshot doc) {
@@ -265,6 +289,7 @@ class Post {
       confirmed: d['confirmed'] ?? false,
       createdAt: (d['createdAt'] as Timestamp?)?.toDate(),
       images: List<String>.from(d['images'] ?? []),
+      quiz: d['quiz'] != null ? Map<String, dynamic>.from(d['quiz']) : null,
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:project_flutter/models/friend_request.dart';
 import 'package:project_flutter/server_url.dart';
@@ -11,61 +12,32 @@ import 'package:project_flutter/pages/chat_page.dart';
 import 'package:project_flutter/services/post_service.dart';
 import 'package:project_flutter/pages/post_detail_page.dart';
 
-class NotificationsPage extends StatelessWidget {
+class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final svc = NotificationService();
-    return Scaffold(
-      backgroundColor: const Color(0xFF1E405B),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E405B),
-        title: const Text(
-          'Notifications',
-          style: TextStyle(color: Colors.white),
-        ),
-      ),
-      body: StreamBuilder<List<AppNotification>>(
-        stream: svc.stream(),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snap.hasData || snap.data!.isEmpty) {
-            return const Center(
-              child: Text(
-                'No notifications yet.',
-                style: TextStyle(color: Colors.white70),
-              ),
-            );
-          }
-          final list = snap.data!;
-          return ListView.builder(
-            itemCount: list.length,
-            itemBuilder: (_, i) {
-              final n = list[i];
-              return ListTile(
-                leading: _liveAvatar(n.fromUid, n.fromPhoto), // <-- NEW
-                title: Text(
-                  n.title,
-                  style: TextStyle(
-                    color: n.read ? Colors.white70 : Colors.white,
-                  ),
-                ),
-                trailing: n.read
-                    ? null
-                    : const Icon(Icons.circle, color: Colors.red, size: 10),
-                onTap: () async {
-                  await svc.markRead(n.id);
-                  if (context.mounted) _handleTap(context, n);
-                },
-              );
-            },
-          );
-        },
-      ),
-    );
+  State<NotificationsPage> createState() => _NotificationsPageState();
+}
+
+class _NotificationsPageState extends State<NotificationsPage> {
+  final svc = NotificationService();
+
+  /* ----------  DELETE ONE  ---------- */
+  Future<void> _deleteOne(String id) async {
+    await FirebaseFirestore.instance.doc('notifications/$id').delete();
+  }
+
+  /* ----------  DELETE ALL FOR ME  ---------- */
+  Future<void> _deleteAll() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final batch = FirebaseFirestore.instance.batch();
+    final snap = await FirebaseFirestore.instance
+        .collection('notifications')
+        .where('toUid', isEqualTo: uid)
+        .get();
+    for (final doc in snap.docs) batch.delete(doc.reference);
+    await batch.commit();
   }
 
   /* ---------------------------------------------------- */
@@ -78,10 +50,9 @@ class NotificationsPage extends StatelessWidget {
           .snapshots(),
       builder: (_, snap) {
         if (!snap.hasData || !snap.data!.exists) {
-          // fall back to cached or default
           return CircleAvatar(
             backgroundImage: (cachedUrl != null && cachedUrl.isNotEmpty)
-                ? NetworkImage(kNgrokBase+cachedUrl)
+                ? NetworkImage(kNgrokBase + cachedUrl)
                 : const AssetImage('assets/other_profile.jpg'),
           );
         }
@@ -89,9 +60,9 @@ class NotificationsPage extends StatelessWidget {
         final liveUrl = data['profilePicture'];
         return CircleAvatar(
           backgroundImage: (liveUrl != null && liveUrl.isNotEmpty)
-              ? NetworkImage(kNgrokBase+liveUrl)
+              ? NetworkImage(kNgrokBase + liveUrl)
               : (cachedUrl != null && cachedUrl.isNotEmpty
-                  ? NetworkImage(kNgrokBase+cachedUrl)
+                  ? NetworkImage(kNgrokBase + cachedUrl)
                   : const AssetImage('assets/other_profile.jpg')),
         );
       },
@@ -198,5 +169,86 @@ class NotificationsPage extends StatelessWidget {
       case NotifType.friendAccepted:
         break;
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1E405B),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1E405B),
+        title: const Text(
+          'Notifications',
+          style: TextStyle(color: Colors.white),
+        ),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: _deleteAll,
+                  child:
+                      const Text('Remove all', style: TextStyle(color: Colors.red)),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: StreamBuilder<List<AppNotification>>(
+              stream: svc.stream(),
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (!snap.hasData || snap.data!.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No notifications yet.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  );
+                }
+                final list = snap.data!;
+                return ListView.builder(
+                  itemCount: list.length,
+                  itemBuilder: (_, i) {
+                    final n = list[i];
+                    return ListTile(
+                      leading: _liveAvatar(n.fromUid, n.fromPhoto),
+                      title: Text(
+                        n.title,
+                        style: TextStyle(
+                          color: n.read ? Colors.white70 : Colors.white,
+                        ),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.close,
+                                size: 18, color: Colors.white70),
+                            onPressed: () => _deleteOne(n.id),
+                          ),
+                          if (!n.read)
+                            const Icon(Icons.circle, color: Colors.red, size: 10),
+                        ],
+                      ),
+                      onTap: () async {
+                        await svc.markRead(n.id);
+                        if (context.mounted) _handleTap(context, n);
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

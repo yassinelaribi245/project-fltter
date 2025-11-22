@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -322,34 +323,35 @@ class _BottomNavExampleState extends State<BottomNavExample>
 
     return Scaffold(
       body: pages[_selectedIndex],
+      extendBody: true, // ⬅️ let body draw behind the bar
       bottomNavigationBar: Container(
         height: 90,
-        color: Colors.transparent,
+        color: Colors.transparent, // ⬅️ totally clear background
         padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
         child: Align(
           alignment: Alignment.bottomCenter,
-          child: Container(
-            height: 65,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.95),
-              borderRadius: BorderRadius.circular(30),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(30),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12), // frosted-glass
+              child: Container(
+                height: 65,
+                decoration: BoxDecoration(
+                  color: Colors.white, // subtle glass tint
+                  borderRadius: BorderRadius.circular(30),
+                  border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
                 ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _navItem(0, Icons.assistant_navigation),
-                _navItem(1, Icons.search),
-                _navItem(2, Icons.notifications),
-                _navItem(3, Icons.message),
-                _navItem(4, Icons.person),
-              ],
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _navItem(0, Icons.assistant_navigation),
+                    _navItem(1, Icons.search),
+                    _navItem(2, Icons.notifications),
+                    _navItem(3, Icons.message),
+                    _navItem(4, Icons.person),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

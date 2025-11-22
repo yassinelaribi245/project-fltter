@@ -3,7 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:project_flutter/services/post_service.dart';
-import 'package:project_flutter/services/messaging_service.dart';
 import 'package:project_flutter/services/friend_service.dart';
 import 'package:project_flutter/pages/create_post_page.dart';
 import 'package:project_flutter/widgets/post_card.dart';
@@ -24,16 +23,15 @@ class _ExplorePageState extends State<ExplorePage>
 
   /* ---------- friends feed ---------- */
   final FriendService _friendService = FriendService();
-  final List<String> _friendPosts = []; // ids already shown
+  final List<String> _friendPosts = [];
   DocumentSnapshot? _lastFriendDoc;
   bool _friendMore = true;
   bool _friendLoading = false;
 
   /* ---------- for-you feed ---------- */
   final PostService _postService = PostService();
-  final MessagingService _msgService = MessagingService();
   List<String> _myTopics = [];
-  final List<String> _forYouShown = []; // ids already shown
+  final Set<String> _forYouShown = <String>{};
   DocumentSnapshot? _lastForYouDoc;
   bool _forYouMore = true;
   bool _forYouLoading = false;
@@ -44,7 +42,7 @@ class _ExplorePageState extends State<ExplorePage>
   final ScrollController _forYouScroll = ScrollController();
 
   @override
-  bool get wantKeepAlive => true; // keep page alive
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -64,19 +62,24 @@ class _ExplorePageState extends State<ExplorePage>
   }
 
   /* ---------------------------------------------------- */
-  /* 1️⃣  initial data : topics + first 10 friends / for-you */
+  /* 1️⃣  initial data : topics stream + first batch       */
   /* ---------------------------------------------------- */
   Future<void> _loadInitialData() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
-      final tasteSnap =
-          await FirebaseFirestore.instance.doc('users/$uid/public/taste').get();
-      final data = tasteSnap.data() ?? {};
-      _myTopics = data.keys
-          .map((k) => k.replaceAll('_', ''))
-          .where((t) => kAppHashtags.contains(t))
-          .toList();
-    }
+    if (uid == null) return;
+
+    // real-time taste updates
+    FirebaseFirestore.instance.doc('users/$uid/public/taste').snapshots().listen((snap) {
+      if (!mounted) return;
+      final fresh = snap.data() ?? {};
+      setState(() {
+        _myTopics = fresh.keys
+            .map((k) => k.replaceAll('_', ''))
+            .where((t) => kAppHashtags.contains(t))
+            .toList();
+      });
+    });
+
     await _loadMoreFriends();
     await _loadMoreForYou();
   }
@@ -126,13 +129,13 @@ class _ExplorePageState extends State<ExplorePage>
     if (mounted) {
       setState(() {
         _friendPosts.addAll(added.map((p) => p.id));
-        _lastFriendDoc = snap.docs.last;
+        _lastFriendDoc = snap.docs.last; // FIXED: whole DocumentSnapshot
         _friendLoading = false;
       });
     }
   }
 
-  /* ----------  prepend newer friends (pull-to-refresh)  ---------- */
+  /* ----------  prepend newer friends (pull-to-refresh)  ----------  */
   Future<void> _loadNewerFriends() async {
     final friendUids = await _friendService.friendUids().first;
     if (friendUids.isEmpty) return;
@@ -170,48 +173,16 @@ class _ExplorePageState extends State<ExplorePage>
   }
 
   /* ---------------------------------------------------- */
-  /* 3️⃣  FOR-YOU  –  10 posts / call  (80 % match + 20 % random) */
+  /* 3️⃣  FOR-YOU  –  80 % matched / 20 % random           */
   /* ---------------------------------------------------- */
   Future<void> _loadMoreForYou() async {
     if (!_forYouMore || _forYouLoading) return;
     if (mounted) setState(() => _forYouLoading = true);
 
-    if (_myTopics.isEmpty) {
-      final snap = await FirebaseFirestore.instance
-          .collection('posts')
-          .where('confirmed', isEqualTo: true)
-          .orderBy('createdAt', descending: true)
-          .limit(10)
-          .get();
+    const int wanted = 10;
+    final List<Post> buffer = [];
 
-      final general = snap.docs
-          .map((d) => Post.fromDoc(d))
-          .where((p) => !_forYouShown.contains(p.id))
-          .toList();
-
-      if (general.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _forYouMore = false;
-            _forYouLoading = false;
-          });
-        }
-        return;
-      }
-      if (mounted) {
-        setState(() {
-          _forYouShown.addAll(general.map((p) => p.id));
-          _lastForYouDoc = snap.docs.last;
-          _forYouLoading = false;
-        });
-      }
-      return;
-    }
-
-    final int matchCount = _rnd.nextDouble() < 0.8 ? 8 : 7;
-    final int randomCount = 10 - matchCount;
-
-    List<Post> matched = [];
+    // 1. 80 % matched topics (if any)
     if (_myTopics.isNotEmpty) {
       final topic = _myTopics[_rnd.nextInt(_myTopics.length)];
       var q = FirebaseFirestore.instance
@@ -219,83 +190,75 @@ class _ExplorePageState extends State<ExplorePage>
           .where('confirmed', isEqualTo: true)
           .where('topics', arrayContains: topic)
           .orderBy('createdAt', descending: true)
-          .limit(matchCount * 2);
+          .limit((wanted * 1.5).ceil());
 
       if (_lastForYouDoc != null) q = q.startAfterDocument(_lastForYouDoc!);
 
-      final snap = await q.get();
-      matched = snap.docs
+      final matchedSnap = await q.get();
+      final matched = matchedSnap.docs
           .map((d) => Post.fromDoc(d))
           .where((p) => !_forYouShown.contains(p.id))
-          .take(matchCount)
+          .take((wanted * 0.8).ceil())
           .toList();
+      buffer.addAll(matched);
     }
 
-    final randomSnap = await FirebaseFirestore.instance
-        .collection('posts')
-        .where('confirmed', isEqualTo: true)
-        .orderBy('createdAt', descending: true)
-        .limit(randomCount * 3)
-        .get();
+    // 2. 20 % random (or 100 % if no taste)
+    final int randomNeeded = wanted - buffer.length;
+    if (randomNeeded > 0) {
+      var q = FirebaseFirestore.instance
+          .collection('posts')
+          .where('confirmed', isEqualTo: true)
+          .orderBy('createdAt', descending: true)
+          .limit(randomNeeded * 3);
 
-    final randomPosts = randomSnap.docs
-        .map((d) => Post.fromDoc(d))
-        .where((p) =>
-            !_forYouShown.contains(p.id) &&
-            !matched.any((m) => m.id == p.id))
-        .take(randomCount)
-        .toList();
+      if (_lastForYouDoc != null) q = q.startAfterDocument(_lastForYouDoc!);
 
-    final combined = [...matched, ...randomPosts];
-    combined.shuffle(_rnd);
+      final randomSnap = await q.get();
+      final random = randomSnap.docs
+          .map((d) => Post.fromDoc(d))
+          .where((p) => !_forYouShown.contains(p.id))
+          .take(randomNeeded)
+          .toList();
+      buffer.addAll(random);
+    }
 
-    if (combined.isEmpty) {
-      if (mounted) {
-        setState(() {
-          _forYouMore = false;
-          _forYouLoading = false;
-        });
-      }
+    buffer.shuffle(_rnd);
+    if (buffer.isEmpty) {
+      if (mounted) setState(() => _forYouMore = false);
       return;
     }
-
-    final nextDoc = combined.isNotEmpty
-        ? await FirebaseFirestore.instance
-            .collection('posts')
-            .doc(combined.last.id)
-            .get()
-        : null;
+final lastDocSnap = await FirebaseFirestore.instance
+        .collection('posts')
+        .doc(buffer.last.id)
+        .get();
     if (mounted) {
       setState(() {
-        _forYouShown.addAll(combined.map((p) => p.id));
-        _lastForYouDoc = nextDoc;
+        _forYouShown.addAll(buffer.map((p) => p.id));
+        _lastForYouDoc = lastDocSnap; // FIXED: whole DocumentSnapshot
         _forYouLoading = false;
       });
     }
   }
 
-  /* ----------  prepend newer for-you (pull-to-refresh)  ---------- */
+  /* ----------  prepend newer for-you (pull-to-refresh)  ----------  */
   Future<void> _loadNewerForYou() async {
-    var q = FirebaseFirestore.instance
+    final newerSnap = await FirebaseFirestore.instance
         .collection('posts')
         .where('confirmed', isEqualTo: true)
-        .orderBy('createdAt', descending: true);
+        .orderBy('createdAt', descending: true)
+        .limit(15)
+        .get();
 
-    if (_forYouShown.isNotEmpty) {
-      final firstDoc = await FirebaseFirestore.instance
-          .collection('posts')
-          .doc(_forYouShown.first)
-          .get();
-      if (firstDoc.exists) q = q.startAfterDocument(firstDoc);
-    }
-
-    final snap = await q.limit(15).get();
-    final newer = snap.docs.map((d) => Post.fromDoc(d)).toList();
+    final newer = newerSnap.docs
+        .map((d) => Post.fromDoc(d))
+        .where((p) => !_forYouShown.contains(p.id))
+        .toList();
     if (newer.isEmpty) return;
 
     if (mounted) {
       setState(() {
-        _forYouShown.insertAll(0, newer.map((p) => p.id));
+        _forYouShown.addAll(newer.map((p) => p.id));
       });
     }
   }
@@ -312,7 +275,7 @@ class _ExplorePageState extends State<ExplorePage>
   /* ---------------------------------------------------- */
   @override
   Widget build(BuildContext context) {
-    super.build(context); // required by AutomaticKeepAliveClientMixin
+    super.build(context);
     return Scaffold(
       backgroundColor: const Color(0xFF1E405B),
       appBar: AppBar(
@@ -347,18 +310,20 @@ class _ExplorePageState extends State<ExplorePage>
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFFFBF1D1),
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const CreatePostPage()),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 100),
+        child: FloatingActionButton(
+          backgroundColor: const Color(0xFFFBF1D1),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CreatePostPage()),
+          ),
+          child: const Icon(Icons.add, color: Color(0xFF1E405B)),
         ),
-        child: const Icon(Icons.add, color: Color(0xFF1E405B)),
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
-          /* ---------- FRIENDS TAB ---------- */
           _buildPagedFeed(
             scrollController: _friendsScroll,
             loading: _friendLoading,
@@ -367,13 +332,11 @@ class _ExplorePageState extends State<ExplorePage>
             emptyMsg: 'No posts from friends yet.',
             onRefresh: _loadNewerFriends,
           ),
-
-          /* ---------- FOR-YOU TAB ---------- */
           _buildPagedFeed(
             scrollController: _forYouScroll,
             loading: _forYouLoading,
             more: _forYouMore,
-            itemIds: _forYouShown,
+            itemIds: _forYouShown.toList(),
             emptyMsg: _myTopics.isEmpty
                 ? 'Start liking posts to get personalised content.'
                 : 'No more posts for you right now.',
@@ -384,9 +347,6 @@ class _ExplorePageState extends State<ExplorePage>
     );
   }
 
-  /* ---------------------------------------------------- */
-  /* 5️⃣  reusable paged-feed widget                      */
-  /* ---------------------------------------------------- */
   Widget _buildPagedFeed({
     required ScrollController scrollController,
     required bool loading,
@@ -407,9 +367,10 @@ class _ExplorePageState extends State<ExplorePage>
         padding: const EdgeInsets.only(top: 16),
         child: ListView.builder(
           controller: scrollController,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          cacheExtent: 3000, // ← keep 3000 px above & below
-          addAutomaticKeepAlives: true, // ← do NOT dispose off-screen items
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4)
+              .copyWith(bottom: 100),
+          cacheExtent: 3000,
+          addAutomaticKeepAlives: true,
           itemCount: itemIds.length + (more ? 1 : 0),
           itemBuilder: (_, i) {
             if (i == itemIds.length) {
@@ -428,9 +389,13 @@ class _ExplorePageState extends State<ExplorePage>
               builder: (_, snap) {
                 if (!snap.hasData || snap.data == null) return const SizedBox.shrink();
                 final post = snap.data!;
-                return post.images != null && post.images!.isNotEmpty
+                final child = post.images != null && post.images!.isNotEmpty
                     ? ImagePostCard(post: post)
                     : PostCard(post: post);
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 4),
+                  child: child,
+                );
               },
             );
           },
